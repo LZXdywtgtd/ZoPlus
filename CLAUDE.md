@@ -1,0 +1,195 @@
+CLAUDE.md - ZoPlus 论文管理软件 v1.0 开发规范
+## 项目基础信息
+### 项目名称
+Zotero Modernization with Tauri + AI（简称：ZoPlus）
+### 项目定位
+基于 Tauri + Rust + React 重构 Zotero 前端，集成 MiniMax AI 与阿里云云同步的跨平台论文管理桌面软件，开源免费，对标 NoteExpress。
+### 文档版本
+v1.0（与项目设计规划版本保持一致）
+### 开发角色
+你是全栈开发工程师，负责基于现有设计规划完成代码编写、功能实现、问题修复，**仅输出可执行代码与实现思路，不额外修改项目架构与需求**。
+
+---
+
+## 1. 前置环境与运行命令（强制遵守）
+### 1.1 必需运行环境（本地开发/打包）
+1. Node.js ≥ 18.0.0（LTS 版本）
+2. Rust 最新稳定工具链（通过 rustup 安装）
+3. Tauri CLI 最新稳定版
+4. 本地已安装 Zotero ≥ 6.0（保证存在原生 SQLite 数据库）
+5. Git（版本控制）
+6. 操作系统：Windows 10/11、macOS 12+、主流 Linux 发行版
+
+### 1.2 第三方服务依赖
+1. MiniMax API：用于 AI 摘要、翻译、自动标签、文献问答、元数据补全
+2. 阿里云服务器（2C2G/3M/40GB）：项目专属云同步服务，**禁用 WebDAV 同步**
+3. 密钥配置：所有密钥通过项目根目录 `.env` 文件读取，格式见下文
+
+### 1.3 项目常用命令
+```bash
+# 安装前端依赖
+npm install
+# 本地开发启动（Tauri 热更新）
+npm run tauri dev
+# 项目打包（生成安装包）
+npm run tauri build
+# Rust 代码检查与格式化
+cargo clippy && cargo fmt
+# TypeScript 类型校验
+npm run type-check
+```
+
+---
+
+## 2. 全局技术栈约束（不可修改）
+### 2.1 整体架构
+- 架构模式：Tauri 标准架构（React 前端 + Rust 后端，通过 Tauri Command 完成 IPC 通信）
+- 数据层：**只读访问 Zotero 原生 SQLite 数据库**，写操作仅允许写入 Zotero `extra` 自定义字段或自建表
+- 搜索引擎：Rust Tantivy（替代 SQLite FTS，支持中文分词、全文检索）
+- PDF 能力：pdf.js + Canvas 实现预览与标注，pdf-lib 作为可选辅助库
+- AI 能力：Rust 后端使用 `reqwest` 调用 MiniMax API，前端不直接请求公网接口
+- 云同步：自研阿里云服务器同步服务，彻底摒弃 WebDAV 方案
+
+### 2.2 细分技术选型
+| 模块 | 技术要求 | 强制规则 |
+| ---- | ---- | ---- |
+| 前端框架 | React 18 + TypeScript | 开启严格模式，禁止 `any` 泛型滥用 |
+| UI 组件 | Ant Design / Mantine 二选一 | 统一组件库，不混用多套 UI |
+| 状态管理 | Zustand / Jotai（轻量级） | 禁止引入 Redux 等重型状态库 |
+| 后端语言 | Rust | 内存安全、异步优先，使用官方主流 crate |
+| 数据库 | rusqlite 访问 Zotero SQLite | 初期以**只读**为主，严控数据写入 |
+| 索引引擎 | Tantivy（Rust） | 独立维护搜索索引，监听数据库变更 |
+| 网络请求 | Rust reqwest | AI、云同步请求统一由后端发起 |
+
+---
+
+## 3. 目录结构规范（严格遵循 Tauri 官方标准）
+```
+Zoplus/                  # 项目根目录
+├── .claude/             # Claude 辅助配置（自动生成，无需修改）
+├── src-tauri/           # Rust 后端根目录
+│   ├── src/
+│   │   ├── db/          # Zotero 数据库访问模块
+│   │   ├── search/      # Tantivy 全文搜索模块
+│   │   ├── ai/          # MiniMax AI 接口模块
+│   │   ├── sync/        # 阿里云同步服务模块
+│   │   ├── pdf/         # PDF 解析与标注模块
+│   │   └── main.rs      # 入口文件 + Tauri Command 注册
+│   ├── Cargo.toml       # Rust 依赖配置
+│   └── tauri.conf.json  # Tauri 全局配置（窗口、权限、打包）
+├── src/                 # React+TS 前端根目录
+│   ├── components/      # 公共组件（PDF阅读器、文献列表、搜索框等）
+│   ├── pages/           # 页面视图
+│   ├── store/           # 状态管理
+│   ├── utils/           # 前端工具函数
+│   ├── App.tsx          # 前端根组件
+│   └── main.tsx         # 前端入口
+├── public/              # 静态资源（图标、字体等）
+├── .env                 # 环境变量（密钥配置，禁止提交到 Git）
+├── .gitignore           # Git 忽略文件
+├── CLAUDE.md            # 本规则文件
+└── 论文管理软件-设计规划-v1.0.txt  # 原始需求文档
+```
+- 新增模块必须归类到对应目录，禁止随意新建文件夹
+- 所有配置文件仅按需修改，不删除 Tauri 自动生成的默认配置
+
+---
+
+## 4. 编码规范与通用规则
+### 4.1 语言与注释
+1. 代码注释、日志、文档、交互文案**统一使用简体中文**；代码标识符（变量/函数/结构体）使用英文
+2. 核心函数、复杂逻辑必须添加单行/多行注释，说明功能、入参、出参
+3. Git 提交信息格式：`[模块] 功能描述`（例：`[db] 实现跨平台 Zotero 路径自动检测`）
+
+### 4.2 数据安全强制规则（最高优先级）
+1. **Zotero 数据库保护**：开发前期所有数据库操作优先**只读查询**；如需写入数据，仅允许写入 `extra` 字段或项目自建数据表，禁止修改 Zotero 原生业务字段
+2. 禁止硬编码密钥：MiniMax API Key、阿里云服务器地址/密钥 全部通过 `.env` 文件读取，严禁写入代码、配置文件
+3. PDF 标注数据：统一序列化为 JSON 存储，保证与 Zotero 数据兼容
+4. 云同步数据必须实现传输加密与存储加密
+
+### 4.3 性能约束（硬性指标）
+1. 应用整体内存占用 ≤ 50MB（基于系统原生 WebView 实现）
+2. 全文搜索响应耗时 ≤ 100ms，支持中文分词与结果高亮
+3. 应用冷启动时间 ≤ 2 秒
+4. 保证与 Zotero Word 插件完全兼容，数据库结构不做破坏性修改
+
+### 4.4 功能约束
+1. 暂不实现：移动端适配、团队协作功能，相关需求直接忽略
+2. PDF 标注必须支持：高亮、矩形、椭圆、箭头、自由绘制、文本笔记
+3. AI 功能必须增加**用量控制与异常捕获**，避免高频调用超出 MiniMax 限额
+4. 云同步仅对接阿里云服务器，**彻底移除 WebDAV 相关代码与逻辑**
+
+---
+
+## 5. 禁止行为（绝对不允许执行）
+1. 不得替换技术栈（禁止将 Tauri 改为 Electron、移除 Rust、更换搜索引擎）
+2. 不得修改 Zotero 原生数据库表结构，不得破坏原有数据逻辑
+3. 不得让前端直接调用 MiniMax API、阿里云同步接口，所有网络请求走 Rust 后端
+4. 不得引入重型第三方库，保持项目轻量、低内存特性
+5. 不得擅自增减需求，所有功能严格按照 `./论文管理软件-设计规划-v1.0.txt` 执行
+6. 禁止编写占位代码、空实现，所有功能必须可运行、可验证
+7. 不得将 `.env` 文件提交到版本控制系统
+
+---
+
+## 6. 环境变量配置规范
+项目根目录 `.env` 文件格式（自行创建，填写真实密钥）：
+```env
+# MiniMax API 配置
+MINIMAX_API_KEY=your_minimax_api_key_here
+MINIMAX_MODEL=abab5.5s
+
+# 阿里云同步服务配置
+ALIYUN_SERVER_URL=https://your-server-ip:port
+ALIYUN_SYNC_TOKEN=your_sync_token_here
+```
+
+---
+
+## 7. 协作流程
+1. 严格按照**分阶段任务**依次开发，**完成一个阶段并验证可用后，再进入下一个阶段**，禁止跨阶段开发
+2. 每个阶段完成后，输出：文件修改清单 + 功能验证说明
+3. 遇到需求模糊、架构冲突问题，**先提问确认，再编写代码**，不自行脑补方案
+4. 修复 Bug 时，保证原有功能不受影响，最小范围修改代码
+```
+
+### 2. 新增 `.gitignore` 文件（项目根目录）
+```gitignore
+# Tauri 构建产物
+/src-tauri/target/
+/src-tauri/bundles/
+/src-tauri/*.log
+
+# 前端构建产物
+/dist/
+/node_modules/
+
+# 环境变量（密钥文件，禁止提交）
+.env
+.env.local
+.env.*.local
+
+# IDE 配置
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 临时文件
+*.tmp
+*.log
+```
+
+### 3. 新增 `.env` 文件模板（项目根目录，自行填写密钥）
+```env
+# MiniMax API 配置
+MINIMAX_API_KEY=请在此处填写你的MiniMax API Key
+MINIMAX_MODEL=abab5.5s
+
+# 阿里云同步服务配置（后续阶段使用）
+ALIYUN_SERVER_URL=http://你的阿里云服务器IP:端口
+ALIYUN_SYNC_TOKEN=你的同步认证令牌
