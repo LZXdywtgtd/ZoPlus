@@ -18,4 +18,4 @@ pub mod items;
 
 pub use connection::DbError;
 pub use items::{ItemInfo, get_all_items, get_item_by_id, get_items_paginated};
-pub use path::{get_zotero_db_path, zotero_db_exists};
+pub use path::{get_zotero_database_path, zotero_db_exists};

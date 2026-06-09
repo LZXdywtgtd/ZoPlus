@@ -7,7 +7,7 @@ use rusqlite::{Connection, Params, Row};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use super::path::get_zotero_db_path;
+use super::path::get_zotero_database_path;
 
 /// 全局数据库连接单例（使用 lazy_static 模式）
 /// 使用 Mutex 确保线程安全，首次调用时初始化
@@ -65,7 +65,12 @@ pub fn get_connection() -> Result<MutexGuard<'static, Option<Connection>>, DbErr
     let mut guard = DB_CONNECTION.lock().map_err(|_| DbError::LockFailed)?;
 
     if guard.is_none() {
-        let db_path = get_zotero_db_path();
+        let db_path = match get_zotero_database_path() {
+            Some(path) => path,
+            None => {
+                return Err(DbError::NotFound(PathBuf::new()));
+            }
+        };
 
         if !db_path.exists() {
             return Err(DbError::NotFound(db_path));
