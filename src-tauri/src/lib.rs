@@ -14,6 +14,11 @@ pub mod sync;
 pub mod pdf;
 
 use db::{get_all_items, get_item_by_id, zotero_db_exists, ItemInfo};
+use pdf::commands::{
+    save_annotation, save_annotations, load_annotations, load_annotations_by_page,
+    update_annotation, delete_annotation, delete_all_annotations, has_annotations,
+    get_annotation_file_path, get_annotation_stats,
+};
 
 /// Tauri 命令：获取所有文献列表
 ///
@@ -52,7 +57,18 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_items,
             get_item,
-            check_db_status
+            check_db_status,
+            // PDF 标注相关命令
+            save_annotation,
+            save_annotations,
+            load_annotations,
+            load_annotations_by_page,
+            update_annotation,
+            delete_annotation,
+            delete_all_annotations,
+            has_annotations,
+            get_annotation_file_path,
+            get_annotation_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

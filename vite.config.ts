@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import path from "path";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
@@ -27,6 +28,23 @@ export default defineConfig(async () => ({
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],
+    },
+  },
+
+  // PDF.js 优化配置
+  optimizeDeps: {
+    include: ["pdfjs-dist"],
+  },
+
+  // 构建配置
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // 将 pdf.js 独立打包
+          pdfjs: ["pdfjs-dist"],
+        },
+      },
     },
   },
 }));
