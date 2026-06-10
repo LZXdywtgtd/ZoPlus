@@ -6,6 +6,7 @@
 //! - `path` - 跨平台数据库路径检测
 //! - `connection` - 单例连接管理
 //! - `items` - 文献信息查询
+//! - `validation` - 数据库完整性验证
 //!
 //! # 安全规则
 //! - 所有数据库操作均为只读
@@ -15,7 +16,12 @@
 pub mod connection;
 pub mod items;
 pub mod path;
+pub mod validation;
 
-pub use connection::DbError;
+pub use connection::{get_current_db_path, get_database_diagnosis, reset_connection, DbError};
 pub use items::{get_all_items, get_item_by_id, get_items_paginated, ItemInfo};
 pub use path::{get_zotero_database_path, zotero_db_exists};
+pub use validation::{
+    diagnose_database, get_all_table_names, validate_sqlite_file, validate_zotero_database,
+    DbValidationError, DatabaseDiagnosis,
+};

@@ -8,10 +8,14 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use super::path::get_zotero_database_path;
+use super::validation::{diagnose_database, validate_zotero_database, DatabaseDiagnosis};
 
 /// 全局数据库连接单例（使用 lazy_static 模式）
 /// 使用 Mutex 确保线程安全，首次调用时初始化
 static DB_CONNECTION: Mutex<Option<Connection>> = Mutex::new(None);
+
+/// 全局数据库路径缓存
+static DB_PATH: Mutex<Option<PathBuf>> = Mutex::new(None);
 
 /// 数据库连接错误类型
 #[derive(Debug)]
@@ -24,6 +28,8 @@ pub enum DbError {
     QueryFailed(String),
     /// 连接锁定失败
     LockFailed,
+    /// 数据库验证失败
+    ValidationFailed(String),
 }
 
 impl std::fmt::Display for DbError {
@@ -41,6 +47,9 @@ impl std::fmt::Display for DbError {
             DbError::LockFailed => {
                 write!(f, "无法锁定数据库连接")
             }
+            DbError::ValidationFailed(msg) => {
+                write!(f, "数据库验证失败: {}", msg)
+            }
         }
     }
 }
@@ -53,6 +62,39 @@ impl From<rusqlite::Error> for DbError {
     }
 }
 
+/// 获取当前缓存的数据库路径
+///
+/// # 返回值
+/// * `Option<PathBuf>` - 当前数据库路径（如果已初始化）
+pub fn get_current_db_path() -> Option<PathBuf> {
+    DB_PATH.lock().ok().and_then(|guard| guard.clone())
+}
+
+/// 获取数据库诊断信息
+///
+/// # 返回值
+/// * `Result<DatabaseDiagnosis, DbError>` - 诊断信息
+pub fn get_database_diagnosis() -> Result<DatabaseDiagnosis, DbError> {
+    let guard = get_connection()?;
+    let conn = guard.as_ref().ok_or_else(|| {
+        DbError::ConnectionFailed("数据库连接未初始化".to_string())
+    })?;
+
+    Ok(diagnose_database(conn))
+}
+
+/// 重置数据库连接（用于切换数据库路径后）
+pub fn reset_connection() {
+    if let Ok(mut guard) = DB_CONNECTION.lock() {
+        *guard = None;
+        eprintln!("[数据库] 连接已重置");
+    }
+    if let Ok(mut path_guard) = DB_PATH.lock() {
+        *path_guard = None;
+        eprintln!("[数据库] 路径缓存已清除");
+    }
+}
+
 /// 获取数据库连接单例
 ///
 /// # 返回值
@@ -61,6 +103,7 @@ impl From<rusqlite::Error> for DbError {
 /// # 错误处理
 /// * 如果数据库文件不存在，返回 DbError::NotFound
 /// * 如果连接创建失败，返回 DbError::ConnectionFailed
+/// * 如果数据库验证失败，返回 DbError::ValidationFailed
 pub fn get_connection() -> Result<MutexGuard<'static, Option<Connection>>, DbError> {
     let mut guard = DB_CONNECTION.lock().map_err(|_| {
         eprintln!("[数据库] 获取连接锁失败: 可能有其他进程正在访问数据库");
@@ -95,8 +138,23 @@ pub fn get_connection() -> Result<MutexGuard<'static, Option<Connection>>, DbErr
             DbError::ConnectionFailed(e.to_string())
         })?;
 
-        eprintln!("[数据库] 数据库连接成功");
+        // 验证数据库完整性
+        match validate_zotero_database(&connection) {
+            Ok(tables) => {
+                eprintln!("[数据库] 数据库验证通过，共有 {} 个表", tables.len());
+            }
+            Err(e) => {
+                eprintln!("[数据库] 数据库验证失败: {:?}", e);
+                return Err(DbError::ValidationFailed(e.to_string()));
+            }
+        }
 
+        // 缓存数据库路径
+        if let Ok(mut path_guard) = DB_PATH.lock() {
+            *path_guard = Some(db_path.clone());
+        }
+
+        eprintln!("[数据库] 数据库连接成功");
         *guard = Some(connection);
     }
 
