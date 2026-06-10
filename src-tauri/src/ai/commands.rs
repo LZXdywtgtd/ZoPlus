@@ -31,6 +31,32 @@ impl Default for AIState {
     }
 }
 
+// ============== 辅助函数（消除重复代码） ==============
+
+/// 验证 AI 配置，返回错误信息如果未配置或已禁用
+fn validate_ai_config(config: &AIConfig) -> Result<(), String> {
+    if config.api_key.is_empty() {
+        return Err("API 密钥未配置，请在设置中配置 AI".to_string());
+    }
+    if !config.enabled {
+        return Err("AI 功能已禁用，请在设置中启用".to_string());
+    }
+    Ok(())
+}
+
+/// 获取并验证 AI Provider
+fn get_validated_provider(config: &AIConfig) -> Result<Arc<dyn AIProvider>, String> {
+    validate_ai_config(config)?;
+    create_provider(config).map_err(|e| e.to_string())
+}
+
+/// 获取数据库连接的辅助函数（统一错误处理）
+fn get_db_connection() -> Result<rusqlite::Connection, String> {
+    let guard = crate::db::connection::get_connection()
+        .map_err(|e| format!("获取数据库连接失败: {}", e))?;
+    guard.as_ref().ok_or_else(|| "数据库连接未初始化".to_string()).map(|c| c.clone())
+}
+
 /// Tauri 命令：获取 AI 配置
 #[tauri::command]
 pub fn get_ai_config(state: State<AIState>) -> AIConfig {
@@ -80,12 +106,7 @@ pub async fn chat_completion(
     messages: Vec<Message>,
 ) -> Result<String, String> {
     let config = state.config_manager.get_config();
-
-    if config.api_key.is_empty() {
-        return Err("API 密钥未配置".to_string());
-    }
-
-    let provider = create_provider(&config).map_err(|e| e.to_string())?;
+    let provider = get_validated_provider(&config)?;
     provider.chat_completion(messages).map_err(|e| e.to_string())
 }
 
@@ -93,12 +114,7 @@ pub async fn chat_completion(
 #[tauri::command]
 pub async fn test_ai_connection(state: State<'_, AIState>) -> Result<bool, String> {
     let config = state.config_manager.get_config();
-
-    if config.api_key.is_empty() {
-        return Err("API 密钥未配置".to_string());
-    }
-
-    let provider = create_provider(&config).map_err(|e| e.to_string())?;
+    let provider = get_validated_provider(&config)?;
     provider.test_connection().map_err(|e| e.to_string())
 }
 
@@ -113,64 +129,19 @@ pub fn get_all_ai_models() -> Vec<ModelInfo> {
 pub fn get_ai_models_by_provider(provider: AIProviderType) -> Vec<ModelInfo> {
     use crate::ai::providers;
     let dummy_key = "dummy".to_string();
-    match provider {
-        AIProviderType::OpenAI => {
-            if let Ok(p) = providers::openai::OpenAIProvider::new(dummy_key.clone(), None) {
-                p.get_available_models()
-            } else {
-                vec![]
-            }
-        }
-        AIProviderType::Anthropic => {
-            if let Ok(p) = providers::anthropic::AnthropicProvider::new(dummy_key.clone(), None) {
-                p.get_available_models()
-            } else {
-                vec![]
-            }
-        }
-        AIProviderType::DeepSeek => {
-            if let Ok(p) = providers::deepseek::DeepSeekProvider::new(dummy_key.clone(), None) {
-                p.get_available_models()
-            } else {
-                vec![]
-            }
-        }
-        AIProviderType::Doubao => {
-            if let Ok(p) = providers::doubao::DoubaoProvider::new(dummy_key.clone(), None) {
-                p.get_available_models()
-            } else {
-                vec![]
-            }
-        }
-        AIProviderType::Qwen => {
-            if let Ok(p) = providers::qwen::QwenProvider::new(dummy_key.clone(), None) {
-                p.get_available_models()
-            } else {
-                vec![]
-            }
-        }
-        AIProviderType::Glm => {
-            if let Ok(p) = providers::glm::GlmProvider::new(dummy_key.clone(), None) {
-                p.get_available_models()
-            } else {
-                vec![]
-            }
-        }
-        AIProviderType::MiniMax => {
-            if let Ok(p) = providers::minimax::MiniMaxProvider::new(dummy_key.clone(), None) {
-                p.get_available_models()
-            } else {
-                vec![]
-            }
-        }
-        AIProviderType::MiMo => {
-            if let Ok(p) = providers::mimo::MiMoProvider::new(dummy_key.clone(), None) {
-                p.get_available_models()
-            } else {
-                vec![]
-            }
-        }
-    }
+    let result = match provider {
+        // 使用泛型函数获取模型列表，避免重复代码
+        AIProviderType::OpenAI => providers::openai::OpenAIProvider::new(dummy_key.clone(), None),
+        AIProviderType::Anthropic => providers::anthropic::AnthropicProvider::new(dummy_key.clone(), None),
+        AIProviderType::DeepSeek => providers::deepseek::DeepSeekProvider::new(dummy_key.clone(), None),
+        AIProviderType::Doubao => providers::doubao::DoubaoProvider::new(dummy_key.clone(), None),
+        AIProviderType::Qwen => providers::qwen::QwenProvider::new(dummy_key.clone(), None),
+        AIProviderType::Glm => providers::glm::GlmProvider::new(dummy_key.clone(), None),
+        AIProviderType::MiniMax => providers::minimax::MiniMaxProvider::new(dummy_key.clone(), None),
+        AIProviderType::MiMo => providers::mimo::MiMoProvider::new(dummy_key.clone(), None),
+    };
+    // 统一处理：成功返回模型列表，失败返回空向量
+    result.map(|p| p.get_available_models()).unwrap_or_default()
 }
 
 /// Tauri 命令：获取模型价格
@@ -195,16 +166,7 @@ pub async fn get_article_summary(
     eprintln!("[命令] get_article_summary 被调用: item_id={}, pdf_key={:?}", item_id, pdf_key);
 
     let config = state.config_manager.get_config();
-
-    if config.api_key.is_empty() {
-        return Err("API 密钥未配置，请在设置中配置 AI".to_string());
-    }
-
-    if !config.enabled {
-        return Err("AI 功能已禁用，请在设置中启用".to_string());
-    }
-
-    let provider = create_provider(&config).map_err(|e| e.to_string())?;
+    let provider = get_validated_provider(&config)?;
     let generator = SummaryGenerator::new(provider);
 
     generator
@@ -266,26 +228,11 @@ pub async fn generate_note(
     eprintln!("[命令] generate_note 被调用: item_id={}, template={}", item_id, template);
 
     let config = state.config_manager.get_config();
-
-    if config.api_key.is_empty() {
-        return Err("API 密钥未配置，请在设置中配置 AI".to_string());
-    }
-
-    if !config.enabled {
-        return Err("AI 功能已禁用，请在设置中启用".to_string());
-    }
+    let provider = get_validated_provider(&config)?;
+    let generator = NoteGen::new(provider);
 
     // 解析模板类型
-    let template_type = match template.as_str() {
-        "key_points" => NoteTemplate::KeyPoints,
-        "methods" => NoteTemplate::Methods,
-        "conclusions" => NoteTemplate::Conclusions,
-        "critical" => NoteTemplate::Critical,
-        _ => NoteTemplate::General,
-    };
-
-    let provider = create_provider(&config).map_err(|e| e.to_string())?;
-    let generator = NoteGen::new(provider);
+    let template_type = parse_template_type(&template);
 
     generator
         .generate_note(item_id, source_text, page, template_type)
@@ -304,31 +251,27 @@ pub async fn generate_notes_batch(
     eprintln!("[命令] generate_notes_batch 被调用: item_id={}, pdf_key={}", item_id, pdf_key);
 
     let config = state.config_manager.get_config();
-
-    if config.api_key.is_empty() {
-        return Err("API 密钥未配置，请在设置中配置 AI".to_string());
-    }
-
-    if !config.enabled {
-        return Err("AI 功能已禁用，请在设置中启用".to_string());
-    }
+    let provider = get_validated_provider(&config)?;
+    let generator = NoteGen::new(provider);
 
     // 解析模板类型
-    let template_type = match template.as_str() {
-        "key_points" => NoteTemplate::KeyPoints,
-        "methods" => NoteTemplate::Methods,
-        "conclusions" => NoteTemplate::Conclusions,
-        "critical" => NoteTemplate::Critical,
-        _ => NoteTemplate::General,
-    };
-
-    let provider = create_provider(&config).map_err(|e| e.to_string())?;
-    let generator = NoteGen::new(provider);
+    let template_type = parse_template_type(&template);
 
     generator
         .generate_notes_batch(item_id, &pdf_key, template_type)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// 解析模板类型字符串为 NoteTemplate 枚举
+fn parse_template_type(template: &str) -> NoteTemplate {
+    match template.as_str() {
+        "key_points" => NoteTemplate::KeyPoints,
+        "methods" => NoteTemplate::Methods,
+        "conclusions" => NoteTemplate::Conclusions,
+        "critical" => NoteTemplate::Critical,
+        _ => NoteTemplate::General,
+    }
 }
 
 /// Tauri 命令：保存笔记到 Zotero itemNotes 表
@@ -339,9 +282,7 @@ pub fn save_note_to_item(
 ) -> Result<bool, String> {
     eprintln!("[命令] save_note_to_item 被调用: item_id={}", item_id);
 
-    let guard = crate::db::connection::get_connection()
-        .map_err(|e| format!("获取数据库连接失败: {}", e))?;
-    let conn = guard.as_ref().ok_or_else(|| "数据库连接未初始化".to_string())?;
+    let conn = get_db_connection()?;
 
     // 将笔记序列化为 JSON
     let note_json = note.to_json().map_err(|e| format!("序列化笔记失败: {}", e))?;
@@ -366,9 +307,7 @@ pub fn save_note_to_item(
 pub fn get_notes_for_item(item_id: i32) -> Result<Vec<Note>, String> {
     eprintln!("[命令] get_notes_for_item 被调用: item_id={}", item_id);
 
-    let guard = crate::db::connection::get_connection()
-        .map_err(|e| format!("获取数据库连接失败: {}", e))?;
-    let conn = guard.as_ref().ok_or_else(|| "数据库连接未初始化".to_string())?;
+    let conn = get_db_connection()?;
 
     // 从 itemNotes 表查询笔记
     let sql = "SELECT noteID, itemID, note, clientDate FROM itemNotes WHERE itemID = ? ORDER BY clientDate DESC";
@@ -398,9 +337,7 @@ pub fn get_notes_for_item(item_id: i32) -> Result<Vec<Note>, String> {
 pub fn delete_note(note_id: String) -> Result<bool, String> {
     eprintln!("[命令] delete_note 被调用: note_id={}", note_id);
 
-    let guard = crate::db::connection::get_connection()
-        .map_err(|e| format!("获取数据库连接失败: {}", e))?;
-    let conn = guard.as_ref().ok_or_else(|| "数据库连接未初始化".to_string())?;
+    let conn = get_db_connection()?;
 
     // 从 itemNotes 表删除笔记
     let sql = "DELETE FROM itemNotes WHERE noteID = ?";
@@ -416,9 +353,7 @@ pub fn delete_note(note_id: String) -> Result<bool, String> {
 pub fn update_note(note: Note) -> Result<bool, String> {
     eprintln!("[命令] update_note 被调用: note_id={}", note.note_id);
 
-    let guard = crate::db::connection::get_connection()
-        .map_err(|e| format!("获取数据库连接失败: {}", e))?;
-    let conn = guard.as_ref().ok_or_else(|| "数据库连接未初始化".to_string())?;
+    let conn = get_db_connection()?;
 
     // 将笔记序列化为 JSON
     let note_json = note.to_json().map_err(|e| format!("序列化笔记失败: {}", e))?;
