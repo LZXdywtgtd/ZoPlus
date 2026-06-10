@@ -107,46 +107,18 @@ fn update_cached_path(path: &PathBuf) {
 }
 
 /// 获取默认的 Zotero 数据库路径（不检查是否存在）
+/// 简化：Windows/macOS 共用 "Zotero" 子目录，Linux 使用 ".zotero"
 fn get_default_zotero_path() -> PathBuf {
     let home_dir = env::home_dir().expect("无法获取用户主目录");
+    let subdir = if cfg!(target_os = "linux") { ".zotero" } else { "Zotero" };
 
-    #[cfg(target_os = "windows")]
-    let db_path = {
-        let mut path = home_dir;
-        path.push("Zotero");
-        path.push(ZOTERO_DB_NAME);
-        path
-    };
-
-    #[cfg(target_os = "macos")]
-    let db_path = {
-        let mut path = home_dir;
-        path.push("Zotero");
-        path.push(ZOTERO_DB_NAME);
-        path
-    };
-
-    #[cfg(target_os = "linux")]
-    let db_path = {
-        let mut path = home_dir;
-        path.push(".zotero");
-        path.push(ZOTERO_DB_NAME);
-        path
-    };
-
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    let db_path = {
-        // 默认使用 Linux 路径作为后备方案
-        let mut path = home_dir;
-        path.push(".zotero");
-        path.push(ZOTERO_DB_NAME);
-        path
-    };
-
-    db_path
+    let mut path = home_dir;
+    path.push(subdir);
+    path.push(ZOTERO_DB_NAME);
+    path
 }
 
-/// 全磁盘扫描，查找 Zotero 数据库
+/// 全磁盘扫描，查找 Zotero 数据库（简化：合并各平台扫描逻辑）
 ///
 /// # 扫描策略
 /// - Windows：扫描所有盘符，递归查找 zotero.sqlite
@@ -158,95 +130,92 @@ fn get_default_zotero_path() -> PathBuf {
 fn scan_for_zotero_db() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     {
-        scan_windows_for_zotero_db()
+        return scan_windows_for_zotero_db();
     }
 
     #[cfg(target_os = "macos")]
     {
-        scan_macos_for_zotero_db()
+        return scan_macos_for_zotero_db();
     }
 
     #[cfg(target_os = "linux")]
     {
-        scan_linux_for_zotero_db()
+        return scan_linux_for_zotero_db();
     }
 
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    {
-        // 未知系统，扫描用户主目录
-        if let Some(home) = env::home_dir() {
-            scan_directory_for_zotero_db(&home, 0)
-        } else {
-            None
-        }
-    }
+    // 未知系统，扫描用户主目录
+    // 注意：scan_directory_for_zotero_db 返回 (PathBuf, SystemTime)，只取 PathBuf
+    env::home_dir()
+        .and_then(|home| scan_directory_for_zotero_db(&home, 0))
+        .map(|(path, _)| path)
 }
 
 /// Windows 平台：扫描所有盘符查找 Zotero 数据库
+/// 简化：合并扫描逻辑，统一收集候选者
 #[cfg(target_os = "windows")]
 fn scan_windows_for_zotero_db() -> Option<PathBuf> {
     eprintln!("[Zotero路径检测] 开始 Windows 全磁盘扫描...");
 
-    // 获取所有可用的盘符
     let drives = get_windows_drives();
     eprintln!("[Zotero路径检测] 发现 {} 个盘符: {:?}", drives.len(), drives);
 
-    let mut candidates: Vec<(PathBuf, SystemTime)> = Vec::new();
+    // 收集所有盘符中的候选数据库
+    let candidates: Vec<(PathBuf, SystemTime)> = drives
+        .iter()
+        .filter_map(|drive| {
+            eprintln!("[Zotero路径检测] 扫描盘符: {}", drive.display());
+            scan_directory_for_zotero_db(drive, 0)
+        })
+        .collect();
 
-    for drive in drives {
-        eprintln!("[Zotero路径检测] 扫描盘符: {}", drive.display());
-        if let Some((path, modified)) = scan_directory_for_zotero_db(&drive, 0) {
-            candidates.push((path, modified));
-        }
-    }
-
-    // 选择修改时间最新的数据库
     select_best_candidate(candidates)
 }
 
 /// 获取 Windows 系统所有可用的盘符
+/// 简化：提取常见盘符备选方案，减少重复逻辑
 #[cfg(target_os = "windows")]
 fn get_windows_drives() -> Vec<PathBuf> {
-    let mut drives = Vec::new();
+    let output = Command::new("wmic")
+        .args(["logicaldisk", "get", "name"])
+        .output();
 
-    // 使用 wmic 获取逻辑磁盘列表
-    match Command::new("wmic").args(["logicaldisk", "get", "name"]).output() {
+    match output {
         Ok(output) => {
             let output_str = String::from_utf8_lossy(&output.stdout);
             eprintln!("[Zotero路径检测] wmic 输出: {}", output_str);
 
-            // 解析输出，每行是一个盘符
-            for line in output_str.lines() {
-                let line = line.trim();
-                // 跳过表头和空行，盘符格式如 "C:"
-                if line.len() >= 2 && line.chars().last().map_or(false, |c| c == ':') {
-                    let drive_letter = &line[..2];
-                    let drive_path = format!("{}\\", drive_letter);
-                    drives.push(PathBuf::from(drive_path));
-                }
-            }
+            // 解析输出，每行是一个盘符，盘符格式如 "C:"
+            output_str
+                .lines()
+                .filter_map(|line| {
+                    let line = line.trim();
+                    let len = line.len();
+                    if len >= 2 && line.chars().last()? == ':' {
+                        Some(PathBuf::from(format!("{}\\", &line[..2])))
+                    } else {
+                        None
+                    }
+                })
+                .collect()
         }
         Err(e) => {
             eprintln!("[Zotero路径检测] wmic 执行失败: {}，使用常见盘符作为备选", e);
             // wmic 失败时使用常见盘符作为备选
-            for letter in ['C', 'D', 'E', 'F', 'G', 'H'] {
-                drives.push(PathBuf::from(format!("{}:\\", letter)));
-            }
+            ['C', 'D', 'E', 'F', 'G', 'H']
+                .iter()
+                .map(|&letter| PathBuf::from(format!("{}:\\", letter)))
+                .collect()
         }
     }
-
-    drives
 }
 
 /// macOS 平台：扫描常见目录查找 Zotero 数据库
+/// 简化：提取公共扫描逻辑，与 Linux 共用
 #[cfg(target_os = "macos")]
 fn scan_macos_for_zotero_db() -> Option<PathBuf> {
     eprintln!("[Zotero路径检测] 开始 macOS 目录扫描...");
 
     let home = env::home_dir()?;
-    let mut candidates: Vec<(PathBuf, SystemTime)> = Vec::new();
-
-    // macOS 常见 Zotero 数据目录
     let search_paths = vec![
         home.join("Zotero"),
         home.join(".zotero"),
@@ -254,25 +223,16 @@ fn scan_macos_for_zotero_db() -> Option<PathBuf> {
         home.join("Library/Application Support/Zotero/Profiles"),
     ];
 
-    for search_path in search_paths {
-        eprintln!("[Zotero路径检测] 扫描路径: {:?}", search_path);
-        if let Some((path, modified)) = scan_directory_for_zotero_db(&search_path, 0) {
-            candidates.push((path, modified));
-        }
-    }
-
-    select_best_candidate(candidates)
+    scan_common_locations(search_paths)
 }
 
 /// Linux 平台：扫描常见目录查找 Zotero 数据库
+/// 简化：提取公共扫描逻辑，与 macOS 共用
 #[cfg(target_os = "linux")]
 fn scan_linux_for_zotero_db() -> Option<PathBuf> {
     eprintln!("[Zotero路径检测] 开始 Linux 目录扫描...");
 
     let home = env::home_dir()?;
-    let mut candidates: Vec<(PathBuf, SystemTime)> = Vec::new();
-
-    // Linux 常见 Zotero 数据目录
     let search_paths = vec![
         home.join(".zotero"),
         home.join("Zotero"),
@@ -280,17 +240,23 @@ fn scan_linux_for_zotero_db() -> Option<PathBuf> {
         home.join(".local/share/zotero"),
     ];
 
-    for search_path in search_paths {
-        eprintln!("[Zotero路径检测] 扫描路径: {:?}", search_path);
-        if let Some((path, modified)) = scan_directory_for_zotero_db(&search_path, 0) {
-            candidates.push((path, modified));
-        }
-    }
+    scan_common_locations(search_paths)
+}
+
+/// 公共目录扫描逻辑：收集多个路径下的候选数据库
+fn scan_common_locations(search_paths: Vec<PathBuf>) -> Option<PathBuf> {
+    let candidates: Vec<(PathBuf, SystemTime)> = search_paths
+        .iter()
+        .filter_map(|search_path| {
+            eprintln!("[Zotero路径检测] 扫描路径: {:?}", search_path);
+            scan_directory_for_zotero_db(search_path, 0)
+        })
+        .collect();
 
     select_best_candidate(candidates)
 }
 
-/// 在指定目录中递归搜索 Zotero 数据库
+/// 在指定目录中递归搜索 Zotero 数据库（简化：使用早期返回减少嵌套）
 ///
 /// # 参数
 /// * `dir` - 要搜索的目录
@@ -304,16 +270,8 @@ fn scan_directory_for_zotero_db(dir: &Path, depth: usize) -> Option<(PathBuf, Sy
         return None;
     }
 
-    // 检查目录是否存在且可读
-    let metadata = match fs::metadata(dir) {
-        Ok(m) => m,
-        Err(_e) => {
-            // 跳过无法访问的目录
-            return None;
-        }
-    };
-
-    // 确保是目录
+    // 检查目录是否存在且可读（跳过无法访问的目录）
+    let metadata = fs::metadata(dir).ok()?;
     if !metadata.is_dir() {
         return None;
     }
@@ -321,38 +279,32 @@ fn scan_directory_for_zotero_db(dir: &Path, depth: usize) -> Option<(PathBuf, Sy
     // 检查当前目录下是否有 zotero.sqlite
     let db_path = dir.join(ZOTERO_DB_NAME);
     if db_path.is_file() {
-        // 获取文件修改时间
-        if let Ok(db_meta) = fs::metadata(&db_path) {
-            if let Ok(modified) = db_meta.modified() {
-                eprintln!("[Zotero路径检测] 在 {:?} 找到数据库，修改时间: {:?}", db_path, modified);
-                return Some((db_path, modified));
-            }
-        }
+        let db_meta = fs::metadata(&db_path).ok()?;
+        let modified = db_meta.modified().ok()?;
+        eprintln!("[Zotero路径检测] 在 {:?} 找到数据库，修改时间: {:?}", db_path, modified);
+        return Some((db_path, modified));
     }
 
     // 递归扫描子目录（限制深度）
-    if depth < MAX_SEARCH_DEPTH {
-        if let Ok(entries) = fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                // 只处理目录
-                if let Ok(meta) = fs::metadata(&path) {
-                    if meta.is_dir() {
-                        // 跳过系统目录，减少搜索范围
-                        let dir_name = path.file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("");
+    if depth >= MAX_SEARCH_DEPTH {
+        return None;
+    }
 
-                        // 跳过常见的不需要扫描的目录
-                        if should_skip_directory(dir_name) {
-                            continue;
-                        }
-
-                        // 递归搜索
-                        if let Some(result) = scan_directory_for_zotero_db(&path, depth + 1) {
-                            return Some(result);
-                        }
-                    }
+    let entries = fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        // 只处理目录，跳过系统目录
+        if let Ok(meta) = fs::metadata(&path) {
+            if meta.is_dir() {
+                let dir_name = path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("");
+                if should_skip_directory(dir_name) {
+                    continue;
+                }
+                // 递归搜索，找到则立即返回
+                if let Some(result) = scan_directory_for_zotero_db(&path, depth + 1) {
+                    return Some(result);
                 }
             }
         }
@@ -390,24 +342,16 @@ fn should_skip_directory(name: &str) -> bool {
 }
 
 /// 从多个候选数据库中选择最佳的一个（修改时间最新的）
-///
-/// # 参数
-/// * `candidates` - 候选数据库列表，每项为 (路径, 修改时间)
-///
-/// # 返回值
-/// * `Option<PathBuf>` - 最佳数据库路径
+/// 简化：使用 max_by 替代全排序，降低时间复杂度 O(n log n) -> O(n)
 fn select_best_candidate(candidates: Vec<(PathBuf, SystemTime)>) -> Option<PathBuf> {
-    if candidates.is_empty() {
-        return None;
-    }
-
-    // 按修改时间降序排序，选择最新的
-    let mut sorted = candidates;
-    sorted.sort_by(|a, b| b.1.cmp(&a.1));
-
-    let best = sorted.into_iter().next().unwrap().0;
-    eprintln!("[Zotero路径检测] 选择最新数据库: {:?}", best);
-    Some(best)
+    // 使用 max_by 直接找最大元素，避免全排序
+    candidates
+        .into_iter()
+        .max_by(|a, b| a.1.cmp(&b.1))
+        .map(|(path, _)| {
+            eprintln!("[Zotero路径检测] 选择最新数据库: {:?}", path);
+            path
+        })
 }
 
 /// 检查 Zotero 数据库文件是否存在
