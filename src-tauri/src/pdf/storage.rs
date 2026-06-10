@@ -86,7 +86,7 @@ impl AnnotationStorage {
     ///
     /// # 返回值
     /// * `PathBuf` - 标注文件路径
-    fn get_annotation_file_path(&self, pdf_key: &str) -> PathBuf {
+    pub fn get_annotation_file_path(&self, pdf_key: &str) -> PathBuf {
         self.storage_dir.join(format!("{}.json", pdf_key))
     }
 

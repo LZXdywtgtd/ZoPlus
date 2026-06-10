@@ -25,3 +25,9 @@ Thumbs.db
 # 临时文件
 *.tmp
 *.log
+
+# 搜索索引（存储在应用数据目录，但以防万一在此添加）
+search_index/
+
+# ZoPlus 应用数据
+ZoPlus/

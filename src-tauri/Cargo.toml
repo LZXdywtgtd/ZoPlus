@@ -23,4 +23,12 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
+# Tantivy 全文搜索引擎
+tantivy = "0.26"
+# 异步运行时
+tokio = { version = "1", features = ["full"] }
+# 路径操作
+dirs = "5"
+# 错误处理
+thiserror = "2"
 

@@ -12,6 +12,7 @@ import {
 import { useState } from 'react';
 import DbStatusAlert from '../components/DbStatusAlert';
 import ItemList from '../components/ItemList';
+import Search from '../pages/Search';
 
 const { Sider, Content } = Layout;
 const { Title, Text } = Typography;
@@ -36,13 +37,8 @@ function Dashboard() {
           </Space>
         );
       case 'search':
-        // 搜索页面（预留）
-        return (
-          <Space direction="vertical" style={{ width: '100%' }} size="large">
-            <Title level={4}>全文搜索</Title>
-            <Text type="secondary">搜索功能开发中...</Text>
-          </Space>
-        );
+        // 搜索页面
+        return <Search />;
       case 'sync':
         // 同步页面（预留）
         return (
