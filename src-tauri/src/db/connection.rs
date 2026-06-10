@@ -76,6 +76,8 @@ pub fn get_connection() -> Result<MutexGuard<'static, Option<Connection>>, DbErr
             return Err(DbError::NotFound(db_path));
         }
 
+        eprintln!("[数据库连接] 正在打开 Zotero 数据库: {:?}", db_path);
+
         // 以只读模式打开数据库连接
         let connection = Connection::open(&db_path)
             .map_err(|e: rusqlite::Error| DbError::ConnectionFailed(e.to_string()))?;
@@ -85,17 +87,12 @@ pub fn get_connection() -> Result<MutexGuard<'static, Option<Connection>>, DbErr
             .execute_batch("PRAGMA query_only = ON;")
             .map_err(|e: rusqlite::Error| DbError::ConnectionFailed(e.to_string()))?;
 
+        eprintln!("[数据库连接] 数据库连接成功");
+
         *guard = Some(connection);
     }
 
-    // 将 guard 提升为 'static 生命周期
-    // 由于 DB_CONNECTION 是 static，锁的生命周期可以安全地提升
-    let static_guard: MutexGuard<'static, Option<Connection>> = unsafe {
-        let ptr = &DB_CONNECTION as *const Mutex<Option<Connection>>;
-        let static_ref: &'static Mutex<Option<Connection>> = &*ptr;
-        static_ref.lock().map_err(|_| DbError::LockFailed)?
-    };
-    Ok(static_guard)
+    Ok(guard)
 }
 
 /// 执行只读查询并映射结果
@@ -116,9 +113,9 @@ where
     P: Params,
 {
     let guard = get_connection()?;
-    let conn = guard.as_ref().ok_or_else(|| {
-        DbError::ConnectionFailed("数据库连接未初始化".to_string())
-    })?;
+    let conn = guard
+        .as_ref()
+        .ok_or_else(|| DbError::ConnectionFailed("数据库连接未初始化".to_string()))?;
 
     let mut stmt = conn.prepare(sql)?;
     let rows = stmt.query_map(params, mapper)?;
@@ -144,9 +141,9 @@ pub fn query_no_params<T>(
     mut mapper: impl FnMut(&Row<'_>) -> Result<T, rusqlite::Error>,
 ) -> Result<Vec<T>, DbError> {
     let guard = get_connection()?;
-    let conn = guard.as_ref().ok_or_else(|| {
-        DbError::ConnectionFailed("数据库连接未初始化".to_string())
-    })?;
+    let conn = guard
+        .as_ref()
+        .ok_or_else(|| DbError::ConnectionFailed("数据库连接未初始化".to_string()))?;
 
     let mut stmt = conn.prepare(sql)?;
     let rows = stmt.query_map([], &mut mapper)?;

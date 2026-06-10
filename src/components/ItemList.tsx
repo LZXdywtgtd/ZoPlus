@@ -2,7 +2,7 @@
 //!
 //! 以表格形式展示文献列表，支持加载状态和错误提示
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Table, Alert, Space, Typography, Empty, Tag } from 'antd';
 import { FileTextOutlined, LoadingOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
@@ -64,9 +64,27 @@ function ItemList() {
   // 从状态管理获取文献列表和相关状态
   const { items, itemsLoading, itemsError, dbStatus } = useAppStore();
 
+  // 加载状态追踪，避免重复调用
+  const loadTriggerRef = useRef<{ isLoading: boolean; dbConnected: boolean }>({
+    isLoading: false,
+    dbConnected: false,
+  });
+
   useEffect(() => {
     // 当数据库连接成功后，自动加载文献列表
-    if (dbStatus.isConnected && items.length === 0 && !itemsLoading) {
+    // 使用 loadTriggerRef 避免重复调用
+    const state = useAppStore.getState();
+    const isConnected = state.dbStatus.isConnected;
+
+    if (
+      isConnected &&
+      state.items.length === 0 &&
+      !state.itemsLoading &&
+      !loadTriggerRef.current.isLoading &&
+      !loadTriggerRef.current.dbConnected
+    ) {
+      loadTriggerRef.current.isLoading = true;
+      loadTriggerRef.current.dbConnected = true;
       loadItems();
     }
   }, [dbStatus.isConnected]);
@@ -77,14 +95,18 @@ function ItemList() {
     useAppStore.getState().setItemsError(null);
 
     try {
+      console.log('[ItemList] 开始加载文献列表...');
       const data = await getItems();
+      console.log('[ItemList] 文献列表加载完成，共', data.length, '条');
       useAppStore.getState().setItems(data);
     } catch (error) {
+      console.error('[ItemList] 文献列表加载失败:', error);
       useAppStore.getState().setItemsError(
         error instanceof Error ? error.message : String(error)
       );
     } finally {
       useAppStore.getState().setItemsLoading(false);
+      loadTriggerRef.current.isLoading = false;
     }
   };
 

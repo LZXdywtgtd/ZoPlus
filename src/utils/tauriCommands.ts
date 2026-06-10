@@ -7,12 +7,36 @@ import type { ItemInfo } from '../store/appStore';
 
 // ============== Zotero 数据库相关 ==============
 
-/// 调用 Rust 后端获取所有文献列表
+/// 调用 Rust 后端获取所有文献列表（带超时控制）
 ///
 /// @returns Promise<ItemInfo[]> 文献列表
-/// @throws 数据库连接失败或查询错误时抛出异常
+/// @throws 数据库连接失败、查询错误或超时时抛出异常
 export async function getItems(): Promise<ItemInfo[]> {
-  return await invoke<ItemInfo[]>('get_items');
+  //10秒超时控制
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error('文献列表加载超时（10秒）')), 10000);
+  });
+
+  const fetchPromise = invoke<ItemInfo[]>('get_items');
+
+  return Promise.race([fetchPromise, timeoutPromise]);
+}
+
+/// 分页获取文献列表
+///
+/// @param offset - 跳过记录数
+/// @param limit - 返回记录数上限
+/// @returns Promise<ItemInfo[]> 文献列表
+/// @throws 数据库连接失败、查询错误或超时时抛出异常
+export async function getItemsPaginated(offset: number, limit: number): Promise<ItemInfo[]> {
+  // 10秒超时控制
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error('文献列表加载超时（10秒）')), 10000);
+  });
+
+  const fetchPromise = invoke<ItemInfo[]>('get_items_paginated', { offset, limit });
+
+  return Promise.race([fetchPromise, timeoutPromise]);
 }
 
 /// 根据 ID 获取单条文献信息

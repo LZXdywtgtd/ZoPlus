@@ -2,17 +2,20 @@
 //!
 //! 基于 Tauri + Rust 重构 Zotero 前端，集成 MiniMax AI 与阿里云云同步。
 
-use std::path::PathBuf;
-use db::{get_all_items, get_item_by_id, zotero_db_exists, ItemInfo};
+use db::{
+    get_all_items, get_item_by_id, get_items_paginated as fetch_items_paginated, zotero_db_exists,
+    ItemInfo,
+};
 use pdf::commands::{
-    save_annotation, save_annotations, load_annotations, load_annotations_by_page,
-    update_annotation, delete_annotation, delete_all_annotations, has_annotations,
-    get_annotation_file_path, get_annotation_stats,
+    delete_all_annotations, delete_annotation, get_annotation_file_path, get_annotation_stats,
+    has_annotations, load_annotations, load_annotations_by_page, save_annotation, save_annotations,
+    update_annotation,
 };
 use search::commands::{
-    init_search_index, build_search_index, search_papers, clear_search_index,
-    get_index_status, update_paper_index, delete_from_index, SearchState,
+    build_search_index, clear_search_index, delete_from_index, get_index_status, init_search_index,
+    search_papers, update_paper_index, SearchState,
 };
+use std::path::PathBuf;
 
 // 数据库访问模块
 pub mod db;
@@ -31,7 +34,25 @@ pub mod pdf;
 /// * `Result<Vec<ItemInfo>, String>` - 文献列表或错误信息
 #[tauri::command]
 fn get_items() -> Result<Vec<ItemInfo>, String> {
+    eprintln!("[命令] get_items 被调用");
     get_all_items().map_err(|e| e.to_string())
+}
+
+/// Tauri 命令：分页获取文献列表
+///
+/// # 参数
+/// * `offset` - 跳过记录数
+/// * `limit` - 返回记录数上限
+///
+/// # 返回值
+/// * `Result<Vec<ItemInfo>, String>` - 文献列表或错误信息
+#[tauri::command]
+fn get_items_paginated(offset: i32, limit: i32) -> Result<Vec<ItemInfo>, String> {
+    eprintln!(
+        "[命令] get_items_paginated 被调用: offset={}, limit={}",
+        offset, limit
+    );
+    fetch_items_paginated(offset, limit).map_err(|e| e.to_string())
 }
 
 /// Tauri 命令：根据ID获取单条文献
@@ -77,6 +98,7 @@ pub fn run() {
         .manage(search_state)
         .invoke_handler(tauri::generate_handler![
             get_items,
+            get_items_paginated,
             get_item,
             check_db_status,
             // PDF 标注相关命令

@@ -27,7 +27,7 @@ pub struct ItemInfo {
     pub year: String,
 }
 
-/// 获取所有文献的基本信息
+/// 获取所有文献的基本信息（带分页限制）
 ///
 /// # 返回值
 /// * `Result<Vec<ItemInfo>, DbError>` - 文献信息列表
@@ -36,9 +36,14 @@ pub struct ItemInfo {
 /// 1. 从 items 表查询 itemID、title、date
 /// 2. 通过 itemAuthors 表关联 creators 表获取作者信息
 /// 3. 多个作者按 order 排序后用分号合并
+/// 4. 默认限制返回 100 条记录，避免查询过慢
 pub fn get_all_items() -> Result<Vec<ItemInfo>, DbError> {
+    let start = std::time::Instant::now();
+    eprintln!("[文献查询] 开始查询文献列表...");
+
     // SQL 查询：获取文献信息及作者
     // 子查询用于按 itemID 和 order 聚合作者姓名
+    // 添加 LIMIT 100 限制返回记录数，避免查询过慢
     let sql = r#"
         SELECT
             i.itemID as item_id,
@@ -57,16 +62,26 @@ pub fn get_all_items() -> Result<Vec<ItemInfo>, DbError> {
         FROM items i
         WHERE i.itemID IS NOT NULL
         ORDER BY i.date DESC, i.title ASC
+        LIMIT 100
     "#;
 
-    query_no_params(sql, |row| {
+    let result = query_no_params(sql, |row| {
         Ok(ItemInfo {
             item_id: row.get(0)?,
             title: row.get::<_, String>(1).unwrap_or_default(),
             year: row.get::<_, String>(2).unwrap_or_default(),
             authors: row.get::<_, String>(3).unwrap_or_default(),
         })
-    })
+    });
+
+    let elapsed = start.elapsed();
+    eprintln!(
+        "[文献查询] 查询完成，返回 {} 条记录，耗时: {:?}",
+        result.as_ref().map(|v| v.len()).unwrap_or(0),
+        elapsed
+    );
+
+    result
 }
 
 /// 根据文献ID获取单条文献信息
@@ -116,10 +131,13 @@ pub fn get_item_by_id(item_id: i32) -> Result<Option<ItemInfo>, DbError> {
 ///
 /// # 返回值
 /// * `Result<Vec<ItemInfo>, DbError>` - 文献信息列表
-pub fn get_items_paginated(
-    offset: i32,
-    limit: i32,
-) -> Result<Vec<ItemInfo>, DbError> {
+pub fn get_items_paginated(offset: i32, limit: i32) -> Result<Vec<ItemInfo>, DbError> {
+    let start = std::time::Instant::now();
+    eprintln!(
+        "[文献查询] 开始分页查询文献列表: offset={}, limit={}",
+        offset, limit
+    );
+
     let sql = r#"
         SELECT
             i.itemID as item_id,
@@ -141,12 +159,21 @@ pub fn get_items_paginated(
         LIMIT ? OFFSET ?
     "#;
 
-    query_with_mapper(sql, params![limit, offset], |row| {
+    let result = query_with_mapper(sql, params![limit, offset], |row| {
         Ok(ItemInfo {
             item_id: row.get(0)?,
             title: row.get::<_, String>(1).unwrap_or_default(),
             year: row.get::<_, String>(2).unwrap_or_default(),
             authors: row.get::<_, String>(3).unwrap_or_default(),
         })
-    })
+    });
+
+    let elapsed = start.elapsed();
+    eprintln!(
+        "[文献查询] 分页查询完成，返回 {} 条记录，耗时: {:?}",
+        result.as_ref().map(|v| v.len()).unwrap_or(0),
+        elapsed
+    );
+
+    result
 }
