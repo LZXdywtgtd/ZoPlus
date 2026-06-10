@@ -31,6 +31,12 @@ tokio = { version = "1", features = ["full"] }
 dirs = "5"
 # 错误处理
 thiserror = "2"
+# HTTP 客户端
+reqwest = { version = "0.12", features = ["json", "stream"] }
+# 字节处理
+bytes = "1"
+# 异步流处理
+futures-util = "0.3"
 
 [dev-dependencies]
 tempfile = "3"
