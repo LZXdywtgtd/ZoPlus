@@ -705,3 +705,116 @@ export async function getComparisonAsCsv(itemIds: number[]): Promise<string> {
     item_ids: itemIds,
   });
 }
+
+// ============== 引用图谱相关 ==============
+
+/// 引用关系图谱节点
+export interface CitationNode {
+  /// 文献ID
+  item_id: number;
+  /// 文献标题
+  title: string;
+  /// 作者信息
+  authors: string;
+  /// 发表年份
+  year: string;
+  /// 被引次数
+  citation_count: number;
+  /// PageRank 值
+  pagerank: number;
+  /// 节点大小
+  node_size: number;
+}
+
+/// 引用关系图谱边
+export interface CitationEdge {
+  /// 源节点ID
+  source: number;
+  /// 目标节点ID
+  target: number;
+  /// 权重
+  weight: number;
+}
+
+/// 引用图谱数据
+export interface CitationGraph {
+  /// 所有节点
+  nodes: CitationNode[];
+  /// 所有边
+  edges: CitationEdge[];
+  /// 总节点数
+  total_nodes: number;
+  /// 总边数
+  total_edges: number;
+  /// 计算耗时（毫秒）
+  compute_time_ms: number;
+}
+
+/// 关键文献
+export interface KeyPaper {
+  /// 文献ID
+  item_id: number;
+  /// 文献标题
+  title: string;
+  /// 作者信息
+  authors: string;
+  /// 发表年份
+  year: string;
+  /// PageRank 值
+  pagerank: number;
+  /// 被引次数
+  citation_count: number;
+  /// 推荐理由
+  reason: string;
+}
+
+/// 文献引用关系详情
+export interface PaperCitations {
+  /// 文献ID
+  item_id: number;
+  /// 文献标题
+  title: string;
+  /// 作者信息
+  authors: string;
+  /// 施引文献
+  cited_by: CitationNode[];
+  /// 被引文献
+  references: CitationNode[];
+  /// 总被引次数
+  total_cited_by: number;
+  /// 总参考文献数
+  total_references: number;
+}
+
+/// 获取引用图谱数据
+///
+/// @param minCitations - 最小被引次数（过滤条件）
+/// @returns Promise<CitationGraph> 图谱数据
+/// @throws 数据库访问失败时抛出异常
+export async function getCitationGraph(minCitations: number = 0): Promise<CitationGraph> {
+  return await invoke<CitationGraph>('get_citation_graph', {
+    min_citations: minCitations,
+  });
+}
+
+/// 获取关键文献推荐列表
+///
+/// @param limit - 返回数量限制
+/// @returns Promise<KeyPaper[]> 关键文献列表
+/// @throws 数据库访问失败时抛出异常
+export async function getKeyPapers(limit: number = 20): Promise<KeyPaper[]> {
+  return await invoke<KeyPaper[]>('get_key_papers', {
+    limit: limit,
+  });
+}
+
+/// 获取指定文献的引用关系
+///
+/// @param itemId - 文献ID
+/// @returns Promise<PaperCitations> 引用关系详情
+/// @throws 数据库访问失败或文献不存在时抛出异常
+export async function getPaperCitations(itemId: number): Promise<PaperCitations> {
+  return await invoke<PaperCitations>('get_paper_citations', {
+    item_id: itemId,
+  });
+}

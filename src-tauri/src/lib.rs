@@ -38,6 +38,9 @@ use ai::comparison_commands::{
     compare_articles, get_comparison_result, has_comparison_result,
     export_comparison, get_comparison_as_markdown, get_comparison_as_csv,
 };
+use ai::citation_graph_commands::{
+    get_citation_graph, get_key_papers, get_paper_citations,
+};
 use std::path::PathBuf;
 
 // 数据库访问模块
@@ -330,6 +333,10 @@ pub fn run() {
             export_comparison,
             get_comparison_as_markdown,
             get_comparison_as_csv,
+            // 引用图谱命令
+            get_citation_graph,
+            get_key_papers,
+            get_paper_citations,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
