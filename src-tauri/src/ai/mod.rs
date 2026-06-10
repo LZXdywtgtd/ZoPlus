@@ -26,6 +26,9 @@ pub mod client;
 pub mod providers;
 pub mod commands;
 pub mod summary;
+pub mod note;
+pub mod citation;
+pub mod citation_commands;
 
 pub use traits::AIProvider;
 pub use errors::AIError;
@@ -33,3 +36,8 @@ pub use models::{Message, MessageRole, ModelInfo, ModelPrice, AIProviderType, St
 pub use config::{AIConfig, AIConfigManager, load_api_key_from_env};
 pub use providers::create_provider;
 pub use summary::{ArticleSummary, SummaryGenerator, SummaryError};
+pub use note::{Note, NoteTemplate, NoteGenerator, NoteError};
+pub use citation::{
+    CitationFormat, CitationFormatter, CitationMetadata, FormattedCitation, ParsedCitation,
+    Author, ItemType, FormatterConfig, FormatterLanguage,
+};

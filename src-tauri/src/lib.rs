@@ -23,6 +23,12 @@ use ai::commands::{
     set_ai_enabled, is_ai_configured, chat_completion, test_ai_connection,
     get_all_ai_models, get_ai_models_by_provider, get_model_price, AIState,
     get_article_summary, has_cached_summary, get_cached_summary, export_summary_as_markdown,
+    generate_note, generate_notes_batch, save_note_to_item, get_notes_for_item,
+    delete_note, update_note, export_note_as_markdown, export_all_notes_as_markdown,
+};
+use ai::citation_commands::{
+    parse_citation_text, format_citation, format_citations_batch,
+    enrich_citation_metadata, get_citation_formats, create_formatter_with_config,
 };
 use std::path::PathBuf;
 
@@ -281,6 +287,22 @@ pub fn run() {
             has_cached_summary,
             get_cached_summary,
             export_summary_as_markdown,
+            // 智能笔记命令
+            generate_note,
+            generate_notes_batch,
+            save_note_to_item,
+            get_notes_for_item,
+            delete_note,
+            update_note,
+            export_note_as_markdown,
+            export_all_notes_as_markdown,
+            // 参考文献格式化命令
+            parse_citation_text,
+            format_citation,
+            format_citations_batch,
+            enrich_citation_metadata,
+            get_citation_formats,
+            create_formatter_with_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

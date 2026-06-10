@@ -374,3 +374,130 @@ export async function getCachedSummary(itemId: number): Promise<ArticleSummary |
 export async function exportSummaryAsMarkdown(itemId: number): Promise<string> {
   return await invoke<string>('export_summary_as_markdown', { item_id: itemId });
 }
+
+// ============== 智能笔记相关 ==============
+
+/// 笔记模板类型
+export type NoteTemplateType =
+  | 'key_points'
+  | 'methods'
+  | 'conclusions'
+  | 'critical'
+  | 'general';
+
+/// 笔记结构
+export interface Note {
+  note_id: string;
+  item_id: number;
+  item_title: string;
+  title: string;
+  content: string;
+  template: NoteTemplateType;
+  source_text: string | null;
+  page: number | null;
+  tags: string[];
+  created_at: number;
+  updated_at: number;
+  version: number;
+}
+
+/// 生成单条笔记
+///
+/// @param itemId - 文献 ID
+/// @param sourceText - 原文内容（选自高亮）
+/// @param page - 页码
+/// @param template - 笔记模板类型
+/// @returns Promise<Note> 生成的笔记
+/// @throws AI 未配置或生成失败时抛出异常
+export async function generateNote(
+  itemId: number,
+  sourceText: string | null,
+  page: number | null,
+  template: NoteTemplateType
+): Promise<Note> {
+  return await invoke<Note>('generate_note', {
+    item_id: itemId,
+    source_text: sourceText,
+    page: page,
+    template: template,
+  });
+}
+
+/// 批量生成笔记（基于多个高亮）
+///
+/// @param itemId - 文献 ID
+/// @param pdfKey - PDF 密钥
+/// @param template - 笔记模板类型
+/// @returns Promise<Note[]> 生成的笔记列表
+/// @throws AI 未配置或生成失败时抛出异常
+export async function generateNotesBatch(
+  itemId: number,
+  pdfKey: string,
+  template: NoteTemplateType
+): Promise<Note[]> {
+  return await invoke<Note[]>('generate_notes_batch', {
+    item_id: itemId,
+    pdf_key: pdfKey,
+    template: template,
+  });
+}
+
+/// 保存笔记到 Zotero itemNotes 表
+///
+/// @param itemId - 文献 ID
+/// @param note - 笔记数据
+/// @returns Promise<boolean> 保存成功返回 true
+/// @throws 保存失败时抛出异常
+export async function saveNoteToItem(itemId: number, note: Note): Promise<boolean> {
+  return await invoke<boolean>('save_note_to_item', {
+    item_id: itemId,
+    note: note,
+  });
+}
+
+/// 获取指定文献的所有笔记
+///
+/// @param itemId - 文献 ID
+/// @returns Promise<Note[]> 笔记列表
+/// @throws 获取失败时抛出异常
+export async function getNotesForItem(itemId: number): Promise<Note[]> {
+  return await invoke<Note[]>('get_notes_for_item', { item_id: itemId });
+}
+
+/// 删除笔记
+///
+/// @param noteId - 笔记 ID
+/// @returns Promise<boolean> 删除成功返回 true
+/// @throws 删除失败时抛出异常
+export async function deleteNote(noteId: string): Promise<boolean> {
+  return await invoke<boolean>('delete_note', { note_id: noteId });
+}
+
+/// 更新笔记
+///
+/// @param note - 更新后的笔记数据
+/// @returns Promise<boolean> 更新成功返回 true
+/// @throws 更新失败时抛出异常
+export async function updateNote(note: Note): Promise<boolean> {
+  return await invoke<boolean>('update_note', { note: note });
+}
+
+/// 导出单条笔记为 Markdown
+///
+/// @param note - 笔记数据
+/// @returns string Markdown 格式
+export async function exportNoteAsMarkdown(note: Note): Promise<string> {
+  return await invoke<string>('export_note_as_markdown', { note: note });
+}
+
+/// 批量导出笔记为 Markdown
+///
+/// @param notes - 笔记列表
+/// @param itemTitle - 文献标题
+/// @returns string Markdown 格式
+export async function exportAllNotesAsMarkdown(notes: Note[], itemTitle: string): Promise<string> {
+  return await invoke<string>('export_all_notes_as_markdown', {
+    notes: notes,
+    item_title: itemTitle,
+  });
+}

@@ -6083,6 +6083,7 @@ dependencies = [
  "bytes",
  "dirs 5.0.1",
  "futures-util",
+ "regex",
  "reqwest 0.12.28",
  "rusqlite",
  "serde",

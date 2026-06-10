@@ -17,6 +17,7 @@ import {
 } from '@ant-design/icons';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import SummaryButton from './SummaryButton';
+import NoteGenerator from './NoteGenerator';
 
 // 设置 PDF.js worker 文件路径
 pdfjsLib.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.mjs`;
@@ -473,6 +474,11 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
             <>
               <div style={styles.divider} />
               <SummaryButton itemId={itemId} pdfKey={pdfKey} showDropdown />
+              <NoteGenerator
+                itemId={itemId}
+                pdfKey={pdfKey}
+                showDropdown
+              />
             </>
           )}
         </Space>

@@ -37,6 +37,8 @@ reqwest = { version = "0.12", features = ["json", "stream"] }
 bytes = "1"
 # 异步流处理
 futures-util = "0.3"
+# 正则表达式
+regex = "1"
 
 [dev-dependencies]
 tempfile = "3"
