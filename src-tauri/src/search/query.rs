@@ -13,8 +13,8 @@ use tantivy::query::QueryParser;
 use tantivy::schema::*;
 use tantivy::{Index, TantivyDocument};
 
+use super::indexer::{IndexerError, SearchIndexer};
 use super::schema::get_field;
-use super::indexer::{SearchIndexer, IndexerError};
 
 /// 搜索结果结构体
 #[derive(Debug, Clone, serde::Serialize)]
@@ -132,11 +132,16 @@ impl SearchEngine {
             params.query.clone()
         };
 
-        let parsed_query = query_parser.parse_query(&query_string)
+        let parsed_query = query_parser
+            .parse_query(&query_string)
             .map_err(|e| IndexerError::QueryParseError(format!("查询解析失败: {}", e)))?;
 
         // 执行搜索
-        let top_docs = searcher.search(&parsed_query, &TopDocs::with_limit(params.limit + params.offset).order_by_score())
+        let top_docs = searcher
+            .search(
+                &parsed_query,
+                &TopDocs::with_limit(params.limit + params.offset).order_by_score(),
+            )
             .map_err(|e| IndexerError::IndexError(e))?;
 
         // 提取结果
@@ -144,34 +149,42 @@ impl SearchEngine {
         for (score, doc_address) in top_docs.into_iter().skip(params.offset) {
             let doc: TantivyDocument = searcher.doc(doc_address)?;
 
-            let item_id = doc.get_first(item_id_field)
+            let item_id = doc
+                .get_first(item_id_field)
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0) as i32;
-            let title = doc.get_first(title_field)
+            let title = doc
+                .get_first(title_field)
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
                 .to_string();
-            let authors = doc.get_first(authors_field)
+            let authors = doc
+                .get_first(authors_field)
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
                 .to_string();
-            let year = doc.get_first(year_field)
+            let year = doc
+                .get_first(year_field)
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
                 .to_string();
-            let abstract_text = doc.get_first(abstract_field)
+            let abstract_text = doc
+                .get_first(abstract_field)
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
                 .to_string();
-            let keywords = doc.get_first(keywords_field)
+            let keywords = doc
+                .get_first(keywords_field)
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
                 .to_string();
-            let fulltext_path = doc.get_first(get_field(&self.schema, "fulltext_path"))
+            let fulltext_path = doc
+                .get_first(get_field(&self.schema, "fulltext_path"))
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
                 .to_string();
-            let tags = doc.get_first(tags_field)
+            let tags = doc
+                .get_first(tags_field)
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
                 .to_string();
@@ -206,15 +219,22 @@ impl SearchEngine {
     /// * `field` - 字段名
     /// * `value` - 搜索值
     /// * `limit` - 返回结果数量上限
-    pub fn search_by_field(&self, field: &str, value: &str, limit: usize) -> Result<Vec<SearchResult>, IndexerError> {
+    pub fn search_by_field(
+        &self,
+        field: &str,
+        value: &str,
+        limit: usize,
+    ) -> Result<Vec<SearchResult>, IndexerError> {
         let reader = self.indexer.get_reader()?;
         let searcher = reader.searcher();
 
         let field = get_field(&self.schema, field);
         let term = tantivy::Term::from_field_text(field, value);
-        let term_query = tantivy::query::TermQuery::new(term, tantivy::schema::IndexRecordOption::Basic);
+        let term_query =
+            tantivy::query::TermQuery::new(term, tantivy::schema::IndexRecordOption::Basic);
 
-        let top_docs = searcher.search(&term_query, &TopDocs::with_limit(limit).order_by_score())
+        let top_docs = searcher
+            .search(&term_query, &TopDocs::with_limit(limit).order_by_score())
             .map_err(|e| IndexerError::IndexError(e))?;
 
         let mut results = Vec::new();
@@ -222,18 +242,22 @@ impl SearchEngine {
             let doc: TantivyDocument = searcher.doc(doc_address)?;
 
             let item_id_field = get_field(&self.schema, "item_id");
-            let item_id = doc.get_first(item_id_field)
+            let item_id = doc
+                .get_first(item_id_field)
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0) as i32;
-            let title = doc.get_first(get_field(&self.schema, "title"))
+            let title = doc
+                .get_first(get_field(&self.schema, "title"))
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
                 .to_string();
-            let authors = doc.get_first(get_field(&self.schema, "authors"))
+            let authors = doc
+                .get_first(get_field(&self.schema, "authors"))
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
                 .to_string();
-            let year = doc.get_first(get_field(&self.schema, "year"))
+            let year = doc
+                .get_first(get_field(&self.schema, "year"))
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
                 .to_string();
@@ -243,19 +267,23 @@ impl SearchEngine {
                 title: title.clone(),
                 authors: authors.clone(),
                 year,
-                abstract_text: doc.get_first(get_field(&self.schema, "abstract"))
+                abstract_text: doc
+                    .get_first(get_field(&self.schema, "abstract"))
                     .and_then(|v| v.as_str())
                     .unwrap_or_default()
                     .to_string(),
-                keywords: doc.get_first(get_field(&self.schema, "keywords"))
+                keywords: doc
+                    .get_first(get_field(&self.schema, "keywords"))
                     .and_then(|v| v.as_str())
                     .unwrap_or_default()
                     .to_string(),
-                fulltext_path: doc.get_first(get_field(&self.schema, "fulltext_path"))
+                fulltext_path: doc
+                    .get_first(get_field(&self.schema, "fulltext_path"))
                     .and_then(|v| v.as_str())
                     .unwrap_or_default()
                     .to_string(),
-                tags: doc.get_first(get_field(&self.schema, "tags"))
+                tags: doc
+                    .get_first(get_field(&self.schema, "tags"))
                     .and_then(|v| v.as_str())
                     .unwrap_or_default()
                     .to_string(),
@@ -293,10 +321,12 @@ impl SearchEngine {
             ],
         );
 
-        let parsed_query = query_parser.parse_query(query)
+        let parsed_query = query_parser
+            .parse_query(query)
             .map_err(|e| IndexerError::QueryParseError(format!("查询解析失败: {}", e)))?;
 
-        let top_docs = searcher.search(&parsed_query, &TopDocs::with_limit(10000).order_by_score())?;
+        let top_docs =
+            searcher.search(&parsed_query, &TopDocs::with_limit(10000).order_by_score())?;
         Ok(top_docs.len())
     }
 }

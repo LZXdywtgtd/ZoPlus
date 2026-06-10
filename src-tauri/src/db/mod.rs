@@ -12,10 +12,10 @@
 //! - 禁止修改 Zotero 原生数据
 //! - 使用 PRAGMA query_only = ON 强制只读模式
 
-pub mod path;
 pub mod connection;
 pub mod items;
+pub mod path;
 
 pub use connection::DbError;
-pub use items::{ItemInfo, get_all_items, get_item_by_id, get_items_paginated};
+pub use items::{get_all_items, get_item_by_id, get_items_paginated, ItemInfo};
 pub use path::{get_zotero_database_path, zotero_db_exists};

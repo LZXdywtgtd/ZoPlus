@@ -259,10 +259,7 @@ impl Annotation {
             annotation_type: AnnotationType::Rectangle,
             color: color.unwrap_or_else(AnnotationColor::default_rectangle),
             page,
-            data: AnnotationData::Rectangle(RectangleAnnotation {
-                rect,
-                stroke_width,
-            }),
+            data: AnnotationData::Rectangle(RectangleAnnotation { rect, stroke_width }),
             created_at: now,
             updated_at: now,
         }
@@ -281,10 +278,7 @@ impl Annotation {
             annotation_type: AnnotationType::Ellipse,
             color: color.unwrap_or_else(AnnotationColor::default_ellipse),
             page,
-            data: AnnotationData::Ellipse(EllipseAnnotation {
-                rect,
-                stroke_width,
-            }),
+            data: AnnotationData::Ellipse(EllipseAnnotation { rect, stroke_width }),
             created_at: now,
             updated_at: now,
         }
@@ -451,9 +445,11 @@ fn rand_simple() -> u32 {
     use std::hash::{BuildHasher, Hasher};
     let state = RandomState::new();
     let mut hasher = state.build_hasher();
-    hasher.write_u64(std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos() as u64);
+    hasher.write_u64(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos() as u64,
+    );
     hasher.finish() as u32
 }

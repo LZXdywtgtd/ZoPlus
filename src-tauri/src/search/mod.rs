@@ -15,12 +15,12 @@
 //! - [x] 搜索结果高亮
 //! - [x] 数据库变更监听（预留接口）
 
-pub mod schema;
+pub mod commands;
 pub mod indexer;
 pub mod query;
-pub mod commands;
+pub mod schema;
 
-pub use schema::{IndexSchemaBuilder, IndexField, get_field, get_field_opt, get_field_names};
-pub use indexer::{SearchIndexer, IndexerError, IndexDocument};
-pub use query::{SearchEngine, SearchResult, SearchParams};
-pub use commands::{SearchState, SearchRequest, SearchResponse, IndexBuildProgress, IndexStatus};
+pub use commands::{IndexBuildProgress, IndexStatus, SearchRequest, SearchResponse, SearchState};
+pub use indexer::{IndexDocument, IndexerError, SearchIndexer};
+pub use query::{SearchEngine, SearchParams, SearchResult};
+pub use schema::{get_field, get_field_names, get_field_opt, IndexField, IndexSchemaBuilder};

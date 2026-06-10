@@ -219,15 +219,14 @@ pub fn get_annotation_file_path(app: AppHandle, pdf_path: String) -> Option<Stri
 /// # 返回值
 /// * `AnnotationStats` - 标注统计信息
 #[tauri::command]
-pub fn get_annotation_stats(
-    app: AppHandle,
-    pdf_path: String,
-) -> Result<AnnotationStats, String> {
+pub fn get_annotation_stats(app: AppHandle, pdf_path: String) -> Result<AnnotationStats, String> {
     let storage_dir = get_annotation_storage_dir(&app);
     let storage = AnnotationStorage::new(storage_dir).map_err(|e| e.to_string())?;
 
     let pdf_key = AnnotationStorage::generate_pdf_key(&pdf_path);
-    let annotations = storage.get_annotations(&pdf_key).map_err(|e| e.to_string())?;
+    let annotations = storage
+        .get_annotations(&pdf_key)
+        .map_err(|e| e.to_string())?;
 
     let mut stats = AnnotationStats::default();
 

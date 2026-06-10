@@ -11,7 +11,7 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tantivy::schema::*;
-use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, doc};
+use tantivy::{doc, Index, IndexReader, IndexWriter, ReloadPolicy};
 
 use crate::db::items::{get_all_items, ItemInfo};
 
@@ -144,8 +144,13 @@ impl SearchIndexer {
 
     /// 获取索引写入器
     fn get_writer(&self) -> Result<std::sync::MutexGuard<IndexWriter>, IndexerError> {
-        let writer = self.writer.as_ref().ok_or(IndexerError::IndexPathNotInitialized)?;
-        Ok(writer.lock().map_err(|_| IndexerError::IndexPathNotInitialized)?)
+        let writer = self
+            .writer
+            .as_ref()
+            .ok_or(IndexerError::IndexPathNotInitialized)?;
+        Ok(writer
+            .lock()
+            .map_err(|_| IndexerError::IndexPathNotInitialized)?)
     }
 
     /// 获取索引读取器

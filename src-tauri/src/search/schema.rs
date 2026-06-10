@@ -48,7 +48,8 @@ impl IndexSchemaBuilder {
     /// 添加文献ID字段（主键，唯一标识）
     /// 类型：NUMERIC，整型，不分词
     pub fn add_item_id_field(&mut self) {
-        self.schema_builder.add_i64_field("item_id", INDEXED | STORED);
+        self.schema_builder
+            .add_i64_field("item_id", INDEXED | STORED);
     }
 
     /// 添加标题字段
@@ -72,19 +73,22 @@ impl IndexSchemaBuilder {
     /// 添加摘要字段
     /// 类型：TEXT，支持分词搜索
     pub fn add_abstract_field(&mut self) {
-        self.schema_builder.add_text_field("abstract", TEXT | STORED);
+        self.schema_builder
+            .add_text_field("abstract", TEXT | STORED);
     }
 
     /// 添加关键词字段
     /// 类型：TEXT，支持分词搜索
     pub fn add_keywords_field(&mut self) {
-        self.schema_builder.add_text_field("keywords", TEXT | STORED);
+        self.schema_builder
+            .add_text_field("keywords", TEXT | STORED);
     }
 
     /// 添加全文路径字段
     /// 类型：TEXT，存储 PDF 文件路径
     pub fn add_fulltext_path_field(&mut self) {
-        self.schema_builder.add_text_field("fulltext_path", STRING | STORED);
+        self.schema_builder
+            .add_text_field("fulltext_path", STRING | STORED);
     }
 
     /// 添加标签字段
@@ -121,9 +125,9 @@ pub fn get_field_names() -> Vec<&'static str> {
 
 /// 根据字段名获取字段
 pub fn get_field(schema: &Schema, field_name: &str) -> Field {
-    schema.get_field(field_name).unwrap_or_else(|_| {
-        panic!("字段 {} 不存在于索引 Schema 中", field_name)
-    })
+    schema
+        .get_field(field_name)
+        .unwrap_or_else(|_| panic!("字段 {} 不存在于索引 Schema 中", field_name))
 }
 
 /// 根据字段名获取字段（可选版本）

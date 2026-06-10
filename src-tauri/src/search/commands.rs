@@ -3,12 +3,12 @@
 //! 本模块提供与前端交互的 Tauri Command 接口，
 //! 包括：构建索引、执行搜索、清除索引等操作。
 
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use super::indexer::{SearchIndexer, IndexerError, IndexDocument};
+use super::indexer::{IndexDocument, IndexerError, SearchIndexer};
 use super::query::{SearchEngine, SearchParams, SearchResult};
 
 /// 全局搜索状态
@@ -53,7 +53,9 @@ impl SearchState {
     }
 
     /// 获取索引构建器
-    pub fn get_indexer(&self) -> Result<std::sync::MutexGuard<Option<Arc<SearchIndexer>>>, IndexerError> {
+    pub fn get_indexer(
+        &self,
+    ) -> Result<std::sync::MutexGuard<Option<Arc<SearchIndexer>>>, IndexerError> {
         Ok(self.indexer.lock().unwrap())
     }
 
@@ -132,12 +134,16 @@ pub fn init_search_index(state: State<SearchState>) -> Result<bool, String> {
 /// * `Result<IndexBuildProgress, String>` - 构建进度
 #[tauri::command]
 pub fn build_search_index(state: State<SearchState>) -> Result<IndexBuildProgress, String> {
-    let indexer_guard = state.get_indexer().map_err(|e: IndexerError| format!("{e}"))?;
+    let indexer_guard = state
+        .get_indexer()
+        .map_err(|e: IndexerError| format!("{e}"))?;
     let indexer = indexer_guard.as_ref().ok_or("索引未初始化")?;
 
-    let total = indexer.build_index_from_database(|processed, total| {
-        println!("索引构建进度: {}/{}", processed, total);
-    }).map_err(|e: IndexerError| format!("{e}"))?;
+    let total = indexer
+        .build_index_from_database(|processed, total| {
+            println!("索引构建进度: {}/{}", processed, total);
+        })
+        .map_err(|e: IndexerError| format!("{e}"))?;
 
     Ok(IndexBuildProgress {
         processed: total,
@@ -159,7 +165,9 @@ pub fn search_papers(
     state: State<SearchState>,
     request: SearchRequest,
 ) -> Result<SearchResponse, String> {
-    let engine_guard = state.get_engine().map_err(|e: IndexerError| format!("{e}"))?;
+    let engine_guard = state
+        .get_engine()
+        .map_err(|e: IndexerError| format!("{e}"))?;
     let engine = engine_guard.as_ref().ok_or("搜索引擎未初始化")?;
 
     let params = SearchParams {
@@ -170,8 +178,12 @@ pub fn search_papers(
         fuzzy_distance: request.fuzzy_distance.unwrap_or(2),
     };
 
-    let results = engine.search(params.clone()).map_err(|e: IndexerError| format!("{e}"))?;
-    let total = engine.get_total_count(&params.query).map_err(|e: IndexerError| format!("{e}"))?;
+    let results = engine
+        .search(params.clone())
+        .map_err(|e: IndexerError| format!("{e}"))?;
+    let total = engine
+        .get_total_count(&params.query)
+        .map_err(|e: IndexerError| format!("{e}"))?;
 
     Ok(SearchResponse {
         results,
@@ -187,10 +199,14 @@ pub fn search_papers(
 /// * `Result<bool, String>` - 清除是否成功
 #[tauri::command]
 pub fn clear_search_index(state: State<SearchState>) -> Result<bool, String> {
-    let indexer_guard = state.get_indexer().map_err(|e: IndexerError| format!("{e}"))?;
+    let indexer_guard = state
+        .get_indexer()
+        .map_err(|e: IndexerError| format!("{e}"))?;
     let indexer = indexer_guard.as_ref().ok_or("索引未初始化")?;
 
-    indexer.clear_index().map_err(|e: IndexerError| format!("{e}"))?;
+    indexer
+        .clear_index()
+        .map_err(|e: IndexerError| format!("{e}"))?;
     Ok(true)
 }
 
@@ -210,10 +226,14 @@ pub struct IndexStatus {
 
 #[tauri::command]
 pub fn get_index_status(state: State<SearchState>) -> Result<IndexStatus, String> {
-    let indexer_guard = state.get_indexer().map_err(|e: IndexerError| format!("{e}"))?;
+    let indexer_guard = state
+        .get_indexer()
+        .map_err(|e: IndexerError| format!("{e}"))?;
     let indexer = indexer_guard.as_ref();
 
-    let document_count = indexer.map(|i| i.get_document_count().unwrap_or(0)).unwrap_or(0);
+    let document_count = indexer
+        .map(|i| i.get_document_count().unwrap_or(0))
+        .unwrap_or(0);
     let exists = indexer.is_some();
 
     Ok(IndexStatus {
@@ -247,7 +267,9 @@ pub fn update_paper_index(
     keywords: String,
     tags: String,
 ) -> Result<bool, String> {
-    let indexer_guard = state.get_indexer().map_err(|e: IndexerError| format!("{e}"))?;
+    let indexer_guard = state
+        .get_indexer()
+        .map_err(|e: IndexerError| format!("{e}"))?;
     let indexer = indexer_guard.as_ref().ok_or("索引未初始化")?;
 
     let doc = IndexDocument {
@@ -261,7 +283,9 @@ pub fn update_paper_index(
         tags,
     };
 
-    indexer.update_document(doc).map_err(|e: IndexerError| format!("{e}"))?;
+    indexer
+        .update_document(doc)
+        .map_err(|e: IndexerError| format!("{e}"))?;
     indexer.commit().map_err(|e: IndexerError| format!("{e}"))?;
 
     Ok(true)
@@ -276,10 +300,14 @@ pub fn update_paper_index(
 /// * `Result<bool, String>` - 删除是否成功
 #[tauri::command]
 pub fn delete_from_index(state: State<SearchState>, item_id: i32) -> Result<bool, String> {
-    let indexer_guard = state.get_indexer().map_err(|e: IndexerError| format!("{e}"))?;
+    let indexer_guard = state
+        .get_indexer()
+        .map_err(|e: IndexerError| format!("{e}"))?;
     let indexer = indexer_guard.as_ref().ok_or("索引未初始化")?;
 
-    indexer.delete_document(item_id).map_err(|e: IndexerError| format!("{e}"))?;
+    indexer
+        .delete_document(item_id)
+        .map_err(|e: IndexerError| format!("{e}"))?;
     indexer.commit().map_err(|e: IndexerError| format!("{e}"))?;
 
     Ok(true)

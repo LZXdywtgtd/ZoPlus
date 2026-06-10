@@ -3,7 +3,7 @@
 //! 本模块负责标注数据的读写操作，将标注序列化为 JSON 格式存储到本地文件
 //! 文件按 PDF 文件名命名，存储在应用数据目录下
 
-use crate::pdf::annotations::{PdfAnnotations, Annotation};
+use crate::pdf::annotations::{Annotation, PdfAnnotations};
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
@@ -192,7 +192,8 @@ impl AnnotationStorage {
                 existing
             }
             None => {
-                let mut new_annotations = PdfAnnotations::new(pdf_key.to_string(), file_name.to_string());
+                let mut new_annotations =
+                    PdfAnnotations::new(pdf_key.to_string(), file_name.to_string());
                 new_annotations.add_annotation(annotation);
                 new_annotations
             }
@@ -287,7 +288,9 @@ impl AnnotationStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pdf::annotations::{Annotation, AnnotationType, PdfRect, AnnotationData, HighlightAnnotation};
+    use crate::pdf::annotations::{
+        Annotation, AnnotationData, AnnotationType, HighlightAnnotation, PdfRect,
+    };
     use std::env;
 
     #[test]
@@ -317,7 +320,9 @@ mod tests {
         };
 
         // 保存标注
-        storage.save_annotation(pdf_key, file_name, annotation.clone()).unwrap();
+        storage
+            .save_annotation(pdf_key, file_name, annotation.clone())
+            .unwrap();
 
         // 验证存在
         assert!(storage.exists(pdf_key));

@@ -9,9 +9,9 @@
 //! - 最新优先：多个数据库时自动选择最后修改时间最新的
 //! - 深度限制：递归搜索限制深度，避免性能问题
 
-use std::path::{PathBuf, Path};
 use std::env;
 use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::SystemTime;
 
@@ -92,9 +92,7 @@ pub fn get_zotero_database_path() -> Option<PathBuf> {
 fn get_cached_path() -> Option<PathBuf> {
     // 从环境变量或静态变量中获取缓存路径
     // 这里使用 std::env::var读取上一次缓存的路径
-    std::env::var("ZOTERO_DB_PATH")
-        .ok()
-        .map(PathBuf::from)
+    std::env::var("ZOTERO_DB_PATH").ok().map(PathBuf::from)
 }
 
 /// 更新缓存的数据库路径
@@ -110,7 +108,11 @@ fn update_cached_path(path: &PathBuf) {
 /// 简化：Windows/macOS 共用 "Zotero" 子目录，Linux 使用 ".zotero"
 fn get_default_zotero_path() -> PathBuf {
     let home_dir = env::home_dir().expect("无法获取用户主目录");
-    let subdir = if cfg!(target_os = "linux") { ".zotero" } else { "Zotero" };
+    let subdir = if cfg!(target_os = "linux") {
+        ".zotero"
+    } else {
+        "Zotero"
+    };
 
     let mut path = home_dir;
     path.push(subdir);
@@ -157,7 +159,11 @@ fn scan_windows_for_zotero_db() -> Option<PathBuf> {
     eprintln!("[Zotero路径检测] 开始 Windows 全磁盘扫描...");
 
     let drives = get_windows_drives();
-    eprintln!("[Zotero路径检测] 发现 {} 个盘符: {:?}", drives.len(), drives);
+    eprintln!(
+        "[Zotero路径检测] 发现 {} 个盘符: {:?}",
+        drives.len(),
+        drives
+    );
 
     // 收集所有盘符中的候选数据库
     let candidates: Vec<(PathBuf, SystemTime)> = drives
@@ -199,7 +205,10 @@ fn get_windows_drives() -> Vec<PathBuf> {
                 .collect()
         }
         Err(e) => {
-            eprintln!("[Zotero路径检测] wmic 执行失败: {}，使用常见盘符作为备选", e);
+            eprintln!(
+                "[Zotero路径检测] wmic 执行失败: {}，使用常见盘符作为备选",
+                e
+            );
             // wmic 失败时使用常见盘符作为备选
             ['C', 'D', 'E', 'F', 'G', 'H']
                 .iter()
@@ -281,7 +290,10 @@ fn scan_directory_for_zotero_db(dir: &Path, depth: usize) -> Option<(PathBuf, Sy
     if db_path.is_file() {
         let db_meta = fs::metadata(&db_path).ok()?;
         let modified = db_meta.modified().ok()?;
-        eprintln!("[Zotero路径检测] 在 {:?} 找到数据库，修改时间: {:?}", db_path, modified);
+        eprintln!(
+            "[Zotero路径检测] 在 {:?} 找到数据库，修改时间: {:?}",
+            db_path, modified
+        );
         return Some((db_path, modified));
     }
 
@@ -296,9 +308,7 @@ fn scan_directory_for_zotero_db(dir: &Path, depth: usize) -> Option<(PathBuf, Sy
         // 只处理目录，跳过系统目录
         if let Ok(meta) = fs::metadata(&path) {
             if meta.is_dir() {
-                let dir_name = path.file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("");
+                let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                 if should_skip_directory(dir_name) {
                     continue;
                 }
