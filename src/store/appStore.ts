@@ -3,6 +3,7 @@
 //! 使用 Zustand 管理全局状态，包括数据库状态和文献列表
 
 import { create } from 'zustand';
+import type { ArticleSummary } from '../utils/tauriCommands';
 
 /// 文献信息结构体（对应 Rust 端的 ItemInfo）
 export interface ItemInfo {
@@ -19,6 +20,13 @@ export interface DbStatus {
   error: string | null;
 }
 
+/// 摘要状态
+export interface SummaryStatus {
+  isGenerating: boolean;
+  currentItemId: number | null;
+  error: string | null;
+}
+
 /// 应用状态类型
 interface AppState {
   // 数据库状态
@@ -31,6 +39,10 @@ interface AppState {
 
   // 侧边栏折叠状态
   siderCollapsed: boolean;
+
+  // 摘要状态
+  summaryStatus: SummaryStatus;
+  currentSummary: ArticleSummary | null;
 
   // 设置数据库状态
   setDbStatus: (status: Partial<DbStatus>) => void;
@@ -46,6 +58,11 @@ interface AppState {
 
   // 切换侧边栏
   toggleSider: () => void;
+
+  // 摘要相关操作
+  setSummaryGenerating: (generating: boolean, itemId?: number | null) => void;
+  setSummaryError: (error: string | null) => void;
+  setCurrentSummary: (summary: ArticleSummary | null) => void;
 }
 
 /// 创建全局状态存储
@@ -64,6 +81,14 @@ const useAppStore = create<AppState>((set) => ({
 
   // 初始侧边栏状态
   siderCollapsed: false,
+
+  // 初始摘要状态
+  summaryStatus: {
+    isGenerating: false,
+    currentItemId: null,
+    error: null,
+  },
+  currentSummary: null,
 
   // 设置数据库状态
   setDbStatus: (status) =>
@@ -85,6 +110,27 @@ const useAppStore = create<AppState>((set) => ({
     set((state) => ({
       siderCollapsed: !state.siderCollapsed,
     })),
+
+  // 摘要相关操作
+  setSummaryGenerating: (generating, itemId = null) =>
+    set((state) => ({
+      summaryStatus: {
+        ...state.summaryStatus,
+        isGenerating: generating,
+        currentItemId: itemId,
+      },
+    })),
+
+  setSummaryError: (error) =>
+    set((state) => ({
+      summaryStatus: {
+        ...state.summaryStatus,
+        error,
+      },
+    })),
+
+  setCurrentSummary: (summary) =>
+    set({ currentSummary: summary }),
 }));
 
 export default useAppStore;

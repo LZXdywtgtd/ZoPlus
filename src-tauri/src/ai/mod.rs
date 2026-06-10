@@ -25,9 +25,11 @@ pub mod config;
 pub mod client;
 pub mod providers;
 pub mod commands;
+pub mod summary;
 
 pub use traits::AIProvider;
 pub use errors::AIError;
 pub use models::{Message, MessageRole, ModelInfo, ModelPrice, AIProviderType, Stream};
 pub use config::{AIConfig, AIConfigManager, load_api_key_from_env};
 pub use providers::create_provider;
+pub use summary::{ArticleSummary, SummaryGenerator, SummaryError};

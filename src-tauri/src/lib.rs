@@ -18,6 +18,12 @@ use search::commands::{
     build_search_index, clear_search_index, delete_from_index, get_index_status, init_search_index,
     search_papers, update_paper_index, SearchState,
 };
+use ai::commands::{
+    get_ai_config, update_ai_config, update_ai_api_key, update_ai_model, update_ai_provider,
+    set_ai_enabled, is_ai_configured, chat_completion, test_ai_connection,
+    get_all_ai_models, get_ai_models_by_provider, get_model_price, AIState,
+    get_article_summary, has_cached_summary, get_cached_summary, export_summary_as_markdown,
+};
 use std::path::PathBuf;
 
 // 数据库访问模块
@@ -221,9 +227,13 @@ pub fn run() {
     let search_index_path = get_search_index_path();
     let search_state = SearchState::new(search_index_path);
 
+    //初始化 AI 状态
+    let ai_state = AIState::new();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(search_state)
+        .manage(ai_state)
         .invoke_handler(tauri::generate_handler![
             get_items,
             get_items_paginated,
@@ -253,6 +263,24 @@ pub fn run() {
             get_index_status,
             update_paper_index,
             delete_from_index,
+            // AI 相关命令
+            get_ai_config,
+            update_ai_config,
+            update_ai_api_key,
+            update_ai_model,
+            update_ai_provider,
+            set_ai_enabled,
+            is_ai_configured,
+            chat_completion,
+            test_ai_connection,
+            get_all_ai_models,
+            get_ai_models_by_provider,
+            get_model_price,
+            // 文献摘要命令
+            get_article_summary,
+            has_cached_summary,
+            get_cached_summary,
+            export_summary_as_markdown,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

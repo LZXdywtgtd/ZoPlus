@@ -313,3 +313,64 @@ export async function getAnnotationStats(
 ): Promise<AnnotationStats> {
   return await invoke<AnnotationStats>('get_annotation_stats', { pdfPath });
 }
+
+// ============== 文献摘要相关 ==============
+
+/// 文献摘要结构
+export interface ArticleSummary {
+  item_id: number;
+  title: string;
+  authors: string;
+  year: string;
+  core_problem: string;
+  research_methods: string;
+  key_conclusions: string;
+  innovation: string;
+  limitations: string;
+  keywords: string[];
+  generated_at: number;
+  citation: string;
+  highlighted_content: string[];
+  version: number;
+}
+
+/// 生成文献摘要
+///
+/// @param itemId - 文献 ID
+/// @param pdfKey - PDF 密钥（可选，用于提取用户标注）
+/// @returns Promise<ArticleSummary> 摘要信息
+/// @throws AI 未配置或生成失败时抛出异常
+export async function getArticleSummary(
+  itemId: number,
+  pdfKey?: string
+): Promise<ArticleSummary> {
+  return await invoke<ArticleSummary>('get_article_summary', {
+    item_id: itemId,
+    pdf_key: pdfKey,
+  });
+}
+
+/// 检查是否有缓存的摘要
+///
+/// @param itemId - 文献 ID
+/// @returns Promise<boolean> 是否有缓存
+export async function hasCachedSummary(itemId: number): Promise<boolean> {
+  return await invoke<boolean>('has_cached_summary', { item_id: itemId });
+}
+
+/// 获取缓存的摘要
+///
+/// @param itemId - 文献 ID
+/// @returns Promise<ArticleSummary | null> 缓存的摘要，不存在时返回 null
+export async function getCachedSummary(itemId: number): Promise<ArticleSummary | null> {
+  return await invoke<ArticleSummary | null>('get_cached_summary', { item_id: itemId });
+}
+
+/// 导出摘要为 Markdown 格式
+///
+/// @param itemId - 文献 ID
+/// @returns Promise<string> Markdown 格式的摘要
+/// @throws 没有缓存摘要时抛出异常
+export async function exportSummaryAsMarkdown(itemId: number): Promise<string> {
+  return await invoke<string>('export_summary_as_markdown', { item_id: itemId });
+}

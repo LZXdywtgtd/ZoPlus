@@ -5,7 +5,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
-import { Button, Space, InputNumber, Tooltip, Select,message } from 'antd';
+import { Button, Space, InputNumber, Tooltip, Select, message } from 'antd';
 import {
   LeftOutlined,
   RightOutlined,
@@ -16,6 +16,7 @@ import {
   FullscreenOutlined,
 } from '@ant-design/icons';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
+import SummaryButton from './SummaryButton';
 
 // 设置 PDF.js worker 文件路径
 pdfjsLib.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.mjs`;
@@ -56,6 +57,10 @@ interface PdfViewerProps {
   renderLayer?: (page: PDFPageProxy, canvas: HTMLCanvasElement, viewport: any) => void;
   /** 子组件（标注层等） */
   children?: React.ReactNode;
+  /** 文献ID（用于摘要功能） */
+  itemId?: number;
+  /** PDF密钥（用于摘要功能） */
+  pdfKey?: string;
 }
 
 interface PdfViewerState {
@@ -93,6 +98,8 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   onLoadComplete,
   renderLayer,
   children,
+  itemId,
+  pdfKey,
 }) => {
   // 状态
   const [state, setState] = useState<PdfViewerState>({
@@ -461,6 +468,13 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
               disabled={state.isLoading}
             />
           </Tooltip>
+
+          {itemId && (
+            <>
+              <div style={styles.divider} />
+              <SummaryButton itemId={itemId} pdfKey={pdfKey} showDropdown />
+            </>
+          )}
         </Space>
       </div>
 

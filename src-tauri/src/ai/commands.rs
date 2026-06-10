@@ -179,3 +179,72 @@ pub fn get_model_price(state: State<AIState>, model_id: String) -> Option<ModelP
     let provider = create_provider(&config).ok()?;
     provider.get_model_price(&model_id)
 }
+
+// ============== 文献摘要相关命令 ==============
+
+use crate::ai::summary::{ArticleSummary, SummaryGenerator};
+
+/// Tauri 命令：生成文献摘要
+#[tauri::command]
+pub async fn get_article_summary(
+    state: State<'_, AIState>,
+    item_id: i32,
+    pdf_key: Option<String>,
+) -> Result<ArticleSummary, String> {
+    eprintln!("[命令] get_article_summary 被调用: item_id={}, pdf_key={:?}", item_id, pdf_key);
+
+    let config = state.config_manager.get_config();
+
+    if config.api_key.is_empty() {
+        return Err("API 密钥未配置，请在设置中配置 AI".to_string());
+    }
+
+    if !config.enabled {
+        return Err("AI 功能已禁用，请在设置中启用".to_string());
+    }
+
+    let provider = create_provider(&config).map_err(|e| e.to_string())?;
+    let generator = SummaryGenerator::new(provider);
+
+    generator
+        .generate_summary(item_id, pdf_key.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Tauri 命令：检查是否有缓存的摘要
+#[tauri::command]
+pub fn has_cached_summary(state: State<AIState>, item_id: i32) -> bool {
+    let config = state.config_manager.get_config();
+    let provider = match create_provider(&config) {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    let generator = SummaryGenerator::new(provider);
+    generator.has_cached_summary(item_id)
+}
+
+/// Tauri 命令：获取缓存的摘要
+#[tauri::command]
+pub fn get_cached_summary(state: State<AIState>, item_id: i32) -> Option<ArticleSummary> {
+    let config = state.config_manager.get_config();
+    let provider = match create_provider(&config) {
+        Ok(p) => p,
+        Err(_) => return None,
+    };
+    let generator = SummaryGenerator::new(provider);
+    generator.get_cached_summary(item_id)
+}
+
+/// Tauri 命令：导出摘要为 Markdown
+#[tauri::command]
+pub fn export_summary_as_markdown(state: State<AIState>, item_id: i32) -> Result<String, String> {
+    let config = state.config_manager.get_config();
+    let provider = create_provider(&config).map_err(|e| e.to_string())?;
+    let generator = SummaryGenerator::new(provider);
+
+    generator
+        .get_cached_summary(item_id)
+        .map(|s| s.to_markdown())
+        .ok_or_else(|| "没有缓存的摘要".to_string())
+}

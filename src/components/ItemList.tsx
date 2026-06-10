@@ -9,6 +9,7 @@ import type { ColumnsType } from 'antd/es/table';
 import useAppStore from '../store/appStore';
 import { getItems } from '../utils/tauriCommands';
 import type { ItemInfo } from '../store/appStore';
+import SummaryButton from './SummaryButton';
 
 const { Text, Title } = Typography;
 
@@ -56,6 +57,14 @@ const columns: ColumnsType<ItemInfo> = [
       if (!text) return <Text type="secondary">-</Text>;
       return <Tag color="blue">{text}</Tag>;
     },
+  },
+  {
+    title: '操作',
+    key: 'action',
+    width: 100,
+    render: (_: unknown, record: ItemInfo) => (
+      <SummaryButton itemId={record.item_id} showDropdown />
+    ),
   },
 ];
 
