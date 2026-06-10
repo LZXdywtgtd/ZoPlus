@@ -161,16 +161,18 @@ pub fn get_connection() -> Result<MutexGuard<'static, Option<Connection>>, DbErr
     Ok(guard)
 }
 
-/// 执行只读查询并映射结果
+/// 使用外部传入的连接执行只读查询并映射结果（避免重入死锁）
 ///
 /// # 参数
+/// * `conn` - 数据库连接（由调用方保证有效）
 /// * `sql` - SQL 查询语句
 /// * `params` - 查询参数
 /// * `mapper` - 行映射函数
 ///
 /// # 返回值
 /// * `Result<Vec<T>, DbError>` - 映射后的结果列表
-pub fn query_with_mapper<T, P>(
+pub fn query_with_mapper_on_connection<T, P>(
+    conn: &Connection,
     sql: &str,
     params: P,
     mapper: impl FnMut(&Row<'_>) -> Result<T, rusqlite::Error>,
@@ -178,12 +180,6 @@ pub fn query_with_mapper<T, P>(
 where
     P: Params,
 {
-    let guard = get_connection()?;
-    let conn = guard.as_ref().ok_or_else(|| {
-        eprintln!("[数据库] 连接不可用: 数据库连接未初始化");
-        DbError::ConnectionFailed("数据库连接未初始化".to_string())
-    })?;
-
     let mut stmt = conn.prepare(sql).map_err(|e| {
         eprintln!("[数据库] SQL 预处理失败: {:?}", e);
         DbError::QueryFailed(e.to_string())
@@ -201,24 +197,20 @@ where
     Ok(result)
 }
 
-/// 执行只读查询（无参数）并映射结果
+/// 使用外部传入的连接执行只读查询（无参数）并映射结果（避免重入死锁）
 ///
 /// # 参数
+/// * `conn` - 数据库连接（由调用方保证有效）
 /// * `sql` - SQL 查询语句
 /// * `mapper` - 行映射函数
 ///
 /// # 返回值
 /// * `Result<Vec<T>, DbError>` - 映射后的结果列表
-pub fn query_no_params<T>(
+pub fn query_no_params_on_connection<T>(
+    conn: &Connection,
     sql: &str,
     mut mapper: impl FnMut(&Row<'_>) -> Result<T, rusqlite::Error>,
 ) -> Result<Vec<T>, DbError> {
-    let guard = get_connection()?;
-    let conn = guard.as_ref().ok_or_else(|| {
-        eprintln!("[数据库] 连接不可用: 数据库连接未初始化");
-        DbError::ConnectionFailed("数据库连接未初始化".to_string())
-    })?;
-
     let mut stmt = conn.prepare(sql).map_err(|e| {
         eprintln!("[数据库] SQL 预处理失败: {:?}", e);
         DbError::QueryFailed(e.to_string())

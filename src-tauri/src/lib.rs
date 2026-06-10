@@ -3,8 +3,8 @@
 //! 基于 Tauri + Rust 重构 Zotero 前端，集成 MiniMax AI 与阿里云云同步。
 
 use db::{
-    get_all_items, get_current_db_path, get_database_diagnosis, get_item_by_id,
-    get_items_paginated as fetch_items_paginated, reset_connection, validate_sqlite_file,
+    get_all_items_async, get_current_db_path, get_database_diagnosis, get_item_by_id_async,
+    get_items_paginated_async as fetch_items_paginated_async, reset_connection, validate_sqlite_file,
     zotero_db_exists, DatabaseDiagnosis, DbError as DbErr, ItemInfo,
 };
 use error::{get_user_message, AppError};
@@ -32,20 +32,20 @@ pub mod pdf;
 // 统一错误处理模块
 pub mod error;
 
-/// Tauri 命令：获取所有文献列表
+/// Tauri 命令：获取所有文献列表（异步）
 ///
 /// # 返回值
 /// * `Result<Vec<ItemInfo>, String>` - 文献列表或错误信息
 #[tauri::command]
-fn get_items() -> Result<Vec<ItemInfo>, String> {
+async fn get_items() -> Result<Vec<ItemInfo>, String> {
     eprintln!("[命令] get_items 被调用");
-    get_all_items().map_err(|e| {
+    get_all_items_async().await.map_err(|e| {
         eprintln!("[数据库] 获取文献列表失败: {:?}", e);
         get_user_message(&AppError::QueryFailed).to_string()
     })
 }
 
-/// Tauri 命令：分页获取文献列表
+/// Tauri 命令：分页获取文献列表（异步）
 ///
 /// # 参数
 /// * `offset` - 跳过记录数
@@ -54,18 +54,18 @@ fn get_items() -> Result<Vec<ItemInfo>, String> {
 /// # 返回值
 /// * `Result<Vec<ItemInfo>, String>` - 文献列表或错误信息
 #[tauri::command]
-fn get_items_paginated(offset: i32, limit: i32) -> Result<Vec<ItemInfo>, String> {
+async fn get_items_paginated(offset: i32, limit: i32) -> Result<Vec<ItemInfo>, String> {
     eprintln!(
         "[命令] get_items_paginated 被调用: offset={}, limit={}",
         offset, limit
     );
-    fetch_items_paginated(offset, limit).map_err(|e| {
+    fetch_items_paginated_async(offset, limit).await.map_err(|e| {
         eprintln!("[数据库] 分页获取文献列表失败: {:?}", e);
         get_user_message(&AppError::QueryFailed).to_string()
     })
 }
 
-/// Tauri 命令：根据ID获取单条文献
+/// Tauri 命令：根据ID获取单条文献（异步）
 ///
 /// # 参数
 /// * `item_id` - 文献ID
@@ -73,8 +73,8 @@ fn get_items_paginated(offset: i32, limit: i32) -> Result<Vec<ItemInfo>, String>
 /// # 返回值
 /// * `Result<Option<ItemInfo>, String>` - 文献信息或错误信息
 #[tauri::command]
-fn get_item(item_id: i32) -> Result<Option<ItemInfo>, String> {
-    get_item_by_id(item_id).map_err(|e| {
+async fn get_item(item_id: i32) -> Result<Option<ItemInfo>, String> {
+    get_item_by_id_async(item_id).await.map_err(|e| {
         eprintln!("[数据库] 获取文献详情失败: item_id={}, error={:?}", item_id, e);
         get_user_message(&AppError::QueryFailed).to_string()
     })

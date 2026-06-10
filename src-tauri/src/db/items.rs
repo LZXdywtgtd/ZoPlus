@@ -5,8 +5,12 @@
 
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
+use tokio::time::{timeout, Duration};
 
-use super::connection::{query_no_params, query_with_mapper, DbError};
+use super::connection::{query_no_params_on_connection, query_with_mapper_on_connection, DbError};
+
+/// 查询超时时间（秒）
+const QUERY_TIMEOUT_SECS: u64 = 10;
 
 /// 作者关联表名缓存（避免每次查询都检测）
 static AUTHOR_TABLE_NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
@@ -179,33 +183,34 @@ pub struct ItemInfo {
     pub year: String,
 }
 
-/// 获取所有文献的基本信息（带分页限制）
+/// 同步获取所有文献的基本信息（用于 indexer 等同步模块）
+///
+/// 此函数不使用 spawn_blocking 和超时控制，直接在当前线程执行查询。
 ///
 /// # 返回值
 /// * `Result<Vec<ItemInfo>, DbError>` - 文献信息列表
-///
-/// # 查询逻辑
-/// 1. 检测数据库中实际的作者关联表名
-/// 2. 从 items 表查询 itemID、title、date
-/// 3. 通过 itemCreators 表关联 creators 表获取作者信息
-/// 4. 多个作者按 orderIndex 排序后用分号合并
-/// 5. 默认限制返回 100 条记录，避免查询过慢
 pub fn get_all_items() -> Result<Vec<ItemInfo>, DbError> {
     let start = std::time::Instant::now();
-    eprintln!("[文献查询] 开始查询文献列表...");
+    eprintln!("[文献查询] 开始查询文献列表（同步模式）...");
 
-    // 获取数据库连接并检测作者表名
+    // 直接获取连接，在当前线程执行查询
     let guard = super::connection::get_connection()?;
     let conn = guard.as_ref().ok_or_else(|| {
         DbError::ConnectionFailed("数据库连接未初始化".to_string())
     })?;
+
+    // 检查文献数量（诊断用）
+    let item_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM items", [], |row| row.get(0))
+        .unwrap_or(0);
+    eprintln!("[文献查询] 数据库中共有 {} 篇文献", item_count);
+
     let author_table = detect_author_table_name(conn);
     let sql = build_items_sql(&author_table);
 
     eprintln!("[文献查询] 使用的作者表: {}", author_table);
-    eprintln!("[文献查询] SQL: {}", sql);
 
-    let result = query_no_params(&sql, |row| {
+    let result = query_no_params_on_connection(conn, &sql, |row| {
         Ok(ItemInfo {
             item_id: row.get(0)?,
             title: row.get::<_, String>(1).unwrap_or_default(),
@@ -224,37 +229,120 @@ pub fn get_all_items() -> Result<Vec<ItemInfo>, DbError> {
     result
 }
 
-/// 根据文献ID获取单条文献信息
+/// 异步获取所有文献的基本信息（带分页限制）
+///
+/// # 返回值
+/// * `Result<Vec<ItemInfo>, DbError>` - 文献信息列表
+///
+/// # 查询逻辑
+/// 1. 检测数据库中实际的作者关联表名
+/// 2. 从 items 表查询 itemID、title、date
+/// 3. 通过 itemCreators 表关联 creators 表获取作者信息
+/// 4. 多个作者按 orderIndex 排序后用分号合并
+/// 5. 默认限制返回 100 条记录，避免查询过慢
+pub async fn get_all_items_async() -> Result<Vec<ItemInfo>, DbError> {
+    let start = std::time::Instant::now();
+    eprintln!("[文献查询] 开始查询文献列表...");
+
+    let timeout_duration = Duration::from_secs(QUERY_TIMEOUT_SECS);
+
+    // 在闭包内部获取连接，避免 MutexGuard 跨 await 死锁
+    let result = timeout(
+        timeout_duration,
+        tokio::task::spawn_blocking(|| {
+            let guard = super::connection::get_connection()?;
+            let conn = guard.as_ref().ok_or_else(|| {
+                DbError::ConnectionFailed("数据库连接未初始化".to_string())
+            })?;
+
+            // 检查文献数量（诊断用）
+            let item_count: i64 = conn
+                .query_row("SELECT COUNT(*) FROM items", [], |row| row.get(0))
+                .unwrap_or(0);
+            eprintln!("[文献查询] 数据库中共有 {} 篇文献", item_count);
+
+            let author_table = detect_author_table_name(conn);
+            let sql = build_items_sql(&author_table);
+
+            eprintln!("[文献查询] 使用的作者表: {}", author_table);
+
+            query_no_params_on_connection(conn, &sql, |row| {
+                Ok(ItemInfo {
+                    item_id: row.get(0)?,
+                    title: row.get::<_, String>(1).unwrap_or_default(),
+                    year: row.get::<_, String>(2).unwrap_or_default(),
+                    authors: row.get::<_, String>(3).unwrap_or_default(),
+                })
+            })
+        }),
+    )
+    .await
+    .map_err(|e| {
+        eprintln!("[文献查询] 查询超时（{}秒）: {:?}", QUERY_TIMEOUT_SECS, e);
+        DbError::QueryFailed(format!("查询超时（{}秒），请检查数据库是否被其他程序占用", QUERY_TIMEOUT_SECS))
+    })?
+    .map_err(|e| {
+        eprintln!("[文献查询] spawn_blocking 执行失败: {:?}", e);
+        DbError::QueryFailed(format!("spawn_blocking 执行失败: {}", e))
+    })?;
+
+    let elapsed = start.elapsed();
+    eprintln!(
+        "[文献查询] 查询完成，返回 {} 条记录，耗时: {:?}",
+        result.as_ref().map(|v| v.len()).unwrap_or(0),
+        elapsed
+    );
+
+    result
+}
+
+/// 根据文献ID获取单条文献信息（异步）
 ///
 /// # 参数
 /// * `item_id` - 文献ID
 ///
 /// # 返回值
 /// * `Result<Option<ItemInfo>, DbError>` - 文献信息（不存在时返回 None）
-pub fn get_item_by_id(item_id: i32) -> Result<Option<ItemInfo>, DbError> {
-    // 获取数据库连接并检测作者表名
-    let guard = super::connection::get_connection()?;
-    let conn = guard.as_ref().ok_or_else(|| {
-        DbError::ConnectionFailed("数据库连接未初始化".to_string())
-    })?;
-    let author_table = detect_author_table_name(conn);
-    let sql = build_item_by_id_sql(&author_table);
+pub async fn get_item_by_id_async(item_id: i32) -> Result<Option<ItemInfo>, DbError> {
+    let timeout_duration = Duration::from_secs(QUERY_TIMEOUT_SECS);
 
-    eprintln!("[文献查询] 根据ID查询文献: item_id={}, 作者表={}", item_id, author_table);
+    // 在闭包内部获取连接，避免重入死锁
+    timeout(
+        timeout_duration,
+        tokio::task::spawn_blocking(move || {
+            let guard = super::connection::get_connection()?;
+            let conn = guard.as_ref().ok_or_else(|| {
+                DbError::ConnectionFailed("数据库连接未初始化".to_string())
+            })?;
+            let author_table = detect_author_table_name(conn);
+            let sql = build_item_by_id_sql(&author_table);
 
-    let results = query_with_mapper(&sql, params![item_id], |row| {
-        Ok(ItemInfo {
-            item_id: row.get(0)?,
-            title: row.get::<_, String>(1).unwrap_or_default(),
-            year: row.get::<_, String>(2).unwrap_or_default(),
-            authors: row.get::<_, String>(3).unwrap_or_default(),
-        })
-    })?;
+            eprintln!("[文献查询] 根据ID查询文献: item_id={}, 作者表={}", item_id, author_table);
 
-    Ok(results.into_iter().next())
+            let results = query_with_mapper_on_connection(conn, &sql, params![item_id], |row| {
+                Ok(ItemInfo {
+                    item_id: row.get(0)?,
+                    title: row.get::<_, String>(1).unwrap_or_default(),
+                    year: row.get::<_, String>(2).unwrap_or_default(),
+                    authors: row.get::<_, String>(3).unwrap_or_default(),
+                })
+            })?;
+
+            Ok(results.into_iter().next())
+        }),
+    )
+    .await
+    .map_err(|e| {
+        eprintln!("[文献查询] 查询超时（{}秒）: {:?}", QUERY_TIMEOUT_SECS, e);
+        DbError::QueryFailed(format!("查询超时（{}秒），请检查数据库是否被其他程序占用", QUERY_TIMEOUT_SECS))
+    })?
+    .map_err(|e| {
+        eprintln!("[文献查询] spawn_blocking 执行失败: {:?}", e);
+        DbError::QueryFailed(format!("spawn_blocking 执行失败: {}", e))
+    })?
 }
 
-/// 分页获取文献列表
+/// 分页获取文献列表（异步）
 ///
 /// # 参数
 /// * `offset` - 跳过记录数
@@ -262,31 +350,47 @@ pub fn get_item_by_id(item_id: i32) -> Result<Option<ItemInfo>, DbError> {
 ///
 /// # 返回值
 /// * `Result<Vec<ItemInfo>, DbError>` - 文献信息列表
-pub fn get_items_paginated(offset: i32, limit: i32) -> Result<Vec<ItemInfo>, DbError> {
+pub async fn get_items_paginated_async(offset: i32, limit: i32) -> Result<Vec<ItemInfo>, DbError> {
     let start = std::time::Instant::now();
     eprintln!(
         "[文献查询] 开始分页查询文献列表: offset={}, limit={}",
         offset, limit
     );
 
-    // 获取数据库连接并检测作者表名
-    let guard = super::connection::get_connection()?;
-    let conn = guard.as_ref().ok_or_else(|| {
-        DbError::ConnectionFailed("数据库连接未初始化".to_string())
+    let timeout_duration = Duration::from_secs(QUERY_TIMEOUT_SECS);
+
+    // 在闭包内部获取连接，避免重入死锁
+    let result = timeout(
+        timeout_duration,
+        tokio::task::spawn_blocking(move || {
+            let guard = super::connection::get_connection()?;
+            let conn = guard.as_ref().ok_or_else(|| {
+                DbError::ConnectionFailed("数据库连接未初始化".to_string())
+            })?;
+            let author_table = detect_author_table_name(conn);
+            let sql = build_items_paginated_sql(&author_table);
+
+            eprintln!("[文献查询] 使用的作者表: {}", author_table);
+
+            query_with_mapper_on_connection(conn, &sql, params![limit, offset], |row| {
+                Ok(ItemInfo {
+                    item_id: row.get(0)?,
+                    title: row.get::<_, String>(1).unwrap_or_default(),
+                    year: row.get::<_, String>(2).unwrap_or_default(),
+                    authors: row.get::<_, String>(3).unwrap_or_default(),
+                })
+            })
+        }),
+    )
+    .await
+    .map_err(|e| {
+        eprintln!("[文献查询] 查询超时（{}秒）: {:?}", QUERY_TIMEOUT_SECS, e);
+        DbError::QueryFailed(format!("查询超时（{}秒），请检查数据库是否被其他程序占用", QUERY_TIMEOUT_SECS))
+    })?
+    .map_err(|e| {
+        eprintln!("[文献查询] spawn_blocking 执行失败: {:?}", e);
+        DbError::QueryFailed(format!("spawn_blocking 执行失败: {}", e))
     })?;
-    let author_table = detect_author_table_name(conn);
-    let sql = build_items_paginated_sql(&author_table);
-
-    eprintln!("[文献查询] 使用的作者表: {}", author_table);
-
-    let result = query_with_mapper(&sql, params![limit, offset], |row| {
-        Ok(ItemInfo {
-            item_id: row.get(0)?,
-            title: row.get::<_, String>(1).unwrap_or_default(),
-            year: row.get::<_, String>(2).unwrap_or_default(),
-            authors: row.get::<_, String>(3).unwrap_or_default(),
-        })
-    });
 
     let elapsed = start.elapsed();
     eprintln!(
