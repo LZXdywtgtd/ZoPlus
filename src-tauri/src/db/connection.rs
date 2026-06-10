@@ -62,32 +62,40 @@ impl From<rusqlite::Error> for DbError {
 /// * 如果数据库文件不存在，返回 DbError::NotFound
 /// * 如果连接创建失败，返回 DbError::ConnectionFailed
 pub fn get_connection() -> Result<MutexGuard<'static, Option<Connection>>, DbError> {
-    let mut guard = DB_CONNECTION.lock().map_err(|_| DbError::LockFailed)?;
+    let mut guard = DB_CONNECTION.lock().map_err(|_| {
+        eprintln!("[数据库] 获取连接锁失败: 可能有其他进程正在访问数据库");
+        DbError::LockFailed
+    })?;
 
     if guard.is_none() {
         let db_path = match get_zotero_database_path() {
             Some(path) => path,
             None => {
+                eprintln!("[数据库] 无法检测到 Zotero 数据库路径");
                 return Err(DbError::NotFound(PathBuf::new()));
             }
         };
 
         if !db_path.exists() {
+            eprintln!("[数据库] Zotero 数据库文件不存在: {:?}", db_path);
             return Err(DbError::NotFound(db_path));
         }
 
-        eprintln!("[数据库连接] 正在打开 Zotero 数据库: {:?}", db_path);
+        eprintln!("[数据库] 正在打开 Zotero 数据库: {:?}", db_path);
 
         // 以只读模式打开数据库连接
-        let connection = Connection::open(&db_path)
-            .map_err(|e: rusqlite::Error| DbError::ConnectionFailed(e.to_string()))?;
+        let connection = Connection::open(&db_path).map_err(|e| {
+            eprintln!("[数据库] 连接打开失败: {:?}", e);
+            DbError::ConnectionFailed(e.to_string())
+        })?;
 
         // 设置只读事务模式，确保数据安全
-        connection
-            .execute_batch("PRAGMA query_only = ON;")
-            .map_err(|e: rusqlite::Error| DbError::ConnectionFailed(e.to_string()))?;
+        connection.execute_batch("PRAGMA query_only = ON;").map_err(|e| {
+            eprintln!("[数据库] 设置只读模式失败: {:?}", e);
+            DbError::ConnectionFailed(e.to_string())
+        })?;
 
-        eprintln!("[数据库连接] 数据库连接成功");
+        eprintln!("[数据库] 数据库连接成功");
 
         *guard = Some(connection);
     }
@@ -113,12 +121,19 @@ where
     P: Params,
 {
     let guard = get_connection()?;
-    let conn = guard
-        .as_ref()
-        .ok_or_else(|| DbError::ConnectionFailed("数据库连接未初始化".to_string()))?;
+    let conn = guard.as_ref().ok_or_else(|| {
+        eprintln!("[数据库] 连接不可用: 数据库连接未初始化");
+        DbError::ConnectionFailed("数据库连接未初始化".to_string())
+    })?;
 
-    let mut stmt = conn.prepare(sql)?;
-    let rows = stmt.query_map(params, mapper)?;
+    let mut stmt = conn.prepare(sql).map_err(|e| {
+        eprintln!("[数据库] SQL 预处理失败: {:?}", e);
+        DbError::QueryFailed(e.to_string())
+    })?;
+    let rows = stmt.query_map(params, mapper).map_err(|e| {
+        eprintln!("[数据库] 查询执行失败: {:?}", e);
+        DbError::QueryFailed(e.to_string())
+    })?;
 
     let mut result = Vec::new();
     for row_result in rows {
@@ -141,12 +156,19 @@ pub fn query_no_params<T>(
     mut mapper: impl FnMut(&Row<'_>) -> Result<T, rusqlite::Error>,
 ) -> Result<Vec<T>, DbError> {
     let guard = get_connection()?;
-    let conn = guard
-        .as_ref()
-        .ok_or_else(|| DbError::ConnectionFailed("数据库连接未初始化".to_string()))?;
+    let conn = guard.as_ref().ok_or_else(|| {
+        eprintln!("[数据库] 连接不可用: 数据库连接未初始化");
+        DbError::ConnectionFailed("数据库连接未初始化".to_string())
+    })?;
 
-    let mut stmt = conn.prepare(sql)?;
-    let rows = stmt.query_map([], &mut mapper)?;
+    let mut stmt = conn.prepare(sql).map_err(|e| {
+        eprintln!("[数据库] SQL 预处理失败: {:?}", e);
+        DbError::QueryFailed(e.to_string())
+    })?;
+    let rows = stmt.query_map([], &mut mapper).map_err(|e| {
+        eprintln!("[数据库] 查询执行失败: {:?}", e);
+        DbError::QueryFailed(e.to_string())
+    })?;
 
     let mut result = Vec::new();
     for row_result in rows {

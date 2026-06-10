@@ -3,6 +3,7 @@
 //! 本模块提供与前端交互的 Tauri Command 接口，
 //! 包括：构建索引、执行搜索、清除索引等操作。
 
+use crate::error::{get_user_message, AppError};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -124,7 +125,10 @@ pub struct IndexBuildProgress {
 /// * `Result<bool, String>` - 初始化是否成功
 #[tauri::command]
 pub fn init_search_index(state: State<SearchState>) -> Result<bool, String> {
-    state.initialize().map_err(|e| format!("{e}"))?;
+    state.initialize().map_err(|e| {
+        eprintln!("[搜索] 索引初始化失败: {:?}", e);
+        get_user_message(&AppError::IndexInitFailed).to_string()
+    })?;
     Ok(true)
 }
 
@@ -134,16 +138,23 @@ pub fn init_search_index(state: State<SearchState>) -> Result<bool, String> {
 /// * `Result<IndexBuildProgress, String>` - 构建进度
 #[tauri::command]
 pub fn build_search_index(state: State<SearchState>) -> Result<IndexBuildProgress, String> {
-    let indexer_guard = state
-        .get_indexer()
-        .map_err(|e: IndexerError| format!("{e}"))?;
-    let indexer = indexer_guard.as_ref().ok_or("索引未初始化")?;
+    let indexer_guard = state.get_indexer().map_err(|e| {
+        eprintln!("[搜索] 获取索引构建器失败: {:?}", e);
+        get_user_message(&AppError::IndexNotInitialized).to_string()
+    })?;
+    let indexer = indexer_guard.as_ref().ok_or_else(|| {
+        eprintln!("[搜索] 索引构建器未初始化");
+        get_user_message(&AppError::IndexNotInitialized)
+    })?;
 
     let total = indexer
         .build_index_from_database(|processed, total| {
             println!("索引构建进度: {}/{}", processed, total);
         })
-        .map_err(|e: IndexerError| format!("{e}"))?;
+        .map_err(|e| {
+            eprintln!("[搜索] 索引构建失败: {:?}", e);
+            get_user_message(&AppError::IndexBuildFailed).to_string()
+        })?;
 
     Ok(IndexBuildProgress {
         processed: total,
@@ -165,25 +176,31 @@ pub fn search_papers(
     state: State<SearchState>,
     request: SearchRequest,
 ) -> Result<SearchResponse, String> {
-    let engine_guard = state
-        .get_engine()
-        .map_err(|e: IndexerError| format!("{e}"))?;
-    let engine = engine_guard.as_ref().ok_or("搜索引擎未初始化")?;
+    let engine_guard = state.get_engine().map_err(|e| {
+        eprintln!("[搜索] 获取搜索引擎失败: {:?}", e);
+        get_user_message(&AppError::SearchEngineNotInitialized).to_string()
+    })?;
+    let engine = engine_guard.as_ref().ok_or_else(|| {
+        eprintln!("[搜索] 搜索引擎未初始化");
+        get_user_message(&AppError::SearchEngineNotInitialized)
+    })?;
 
     let params = SearchParams {
-        query: request.query,
+        query: request.query.clone(),
         offset: request.offset.unwrap_or(0),
         limit: request.limit.unwrap_or(20),
         fuzzy: request.fuzzy.unwrap_or(false),
         fuzzy_distance: request.fuzzy_distance.unwrap_or(2),
     };
 
-    let results = engine
-        .search(params.clone())
-        .map_err(|e: IndexerError| format!("{e}"))?;
-    let total = engine
-        .get_total_count(&params.query)
-        .map_err(|e: IndexerError| format!("{e}"))?;
+    let results = engine.search(params.clone()).map_err(|e| {
+        eprintln!("[搜索] 执行搜索失败: query={}, error={:?}", request.query, e);
+        get_user_message(&AppError::SearchFailed).to_string()
+    })?;
+    let total = engine.get_total_count(&params.query).map_err(|e| {
+        eprintln!("[搜索] 获取总数失败: query={}, error={:?}", request.query, e);
+        get_user_message(&AppError::SearchFailed).to_string()
+    })?;
 
     Ok(SearchResponse {
         results,
@@ -199,14 +216,19 @@ pub fn search_papers(
 /// * `Result<bool, String>` - 清除是否成功
 #[tauri::command]
 pub fn clear_search_index(state: State<SearchState>) -> Result<bool, String> {
-    let indexer_guard = state
-        .get_indexer()
-        .map_err(|e: IndexerError| format!("{e}"))?;
-    let indexer = indexer_guard.as_ref().ok_or("索引未初始化")?;
+    let indexer_guard = state.get_indexer().map_err(|e| {
+        eprintln!("[搜索] 获取索引构建器失败: {:?}", e);
+        get_user_message(&AppError::IndexNotInitialized).to_string()
+    })?;
+    let indexer = indexer_guard.as_ref().ok_or_else(|| {
+        eprintln!("[搜索] 索引未初始化");
+        get_user_message(&AppError::IndexNotInitialized)
+    })?;
 
-    indexer
-        .clear_index()
-        .map_err(|e: IndexerError| format!("{e}"))?;
+    indexer.clear_index().map_err(|e| {
+        eprintln!("[搜索] 清除索引失败: {:?}", e);
+        get_user_message(&AppError::IndexOperationFailed).to_string()
+    })?;
     Ok(true)
 }
 
@@ -226,9 +248,10 @@ pub struct IndexStatus {
 
 #[tauri::command]
 pub fn get_index_status(state: State<SearchState>) -> Result<IndexStatus, String> {
-    let indexer_guard = state
-        .get_indexer()
-        .map_err(|e: IndexerError| format!("{e}"))?;
+    let indexer_guard = state.get_indexer().map_err(|e| {
+        eprintln!("[搜索] 获取索引状态失败: {:?}", e);
+        get_user_message(&AppError::IndexNotInitialized).to_string()
+    })?;
     let indexer = indexer_guard.as_ref();
 
     let document_count = indexer
@@ -267,10 +290,14 @@ pub fn update_paper_index(
     keywords: String,
     tags: String,
 ) -> Result<bool, String> {
-    let indexer_guard = state
-        .get_indexer()
-        .map_err(|e: IndexerError| format!("{e}"))?;
-    let indexer = indexer_guard.as_ref().ok_or("索引未初始化")?;
+    let indexer_guard = state.get_indexer().map_err(|e| {
+        eprintln!("[搜索] 获取索引构建器失败: {:?}", e);
+        get_user_message(&AppError::IndexNotInitialized).to_string()
+    })?;
+    let indexer = indexer_guard.as_ref().ok_or_else(|| {
+        eprintln!("[搜索] 索引未初始化");
+        get_user_message(&AppError::IndexNotInitialized)
+    })?;
 
     let doc = IndexDocument {
         item_id,
@@ -283,10 +310,14 @@ pub fn update_paper_index(
         tags,
     };
 
-    indexer
-        .update_document(doc)
-        .map_err(|e: IndexerError| format!("{e}"))?;
-    indexer.commit().map_err(|e: IndexerError| format!("{e}"))?;
+    indexer.update_document(doc).map_err(|e| {
+        eprintln!("[搜索] 更新文献索引失败: item_id={}, error={:?}", item_id, e);
+        get_user_message(&AppError::IndexOperationFailed).to_string()
+    })?;
+    indexer.commit().map_err(|e| {
+        eprintln!("[搜索] 提交索引失败: item_id={}, error={:?}", item_id, e);
+        get_user_message(&AppError::IndexOperationFailed).to_string()
+    })?;
 
     Ok(true)
 }
@@ -300,15 +331,23 @@ pub fn update_paper_index(
 /// * `Result<bool, String>` - 删除是否成功
 #[tauri::command]
 pub fn delete_from_index(state: State<SearchState>, item_id: i32) -> Result<bool, String> {
-    let indexer_guard = state
-        .get_indexer()
-        .map_err(|e: IndexerError| format!("{e}"))?;
-    let indexer = indexer_guard.as_ref().ok_or("索引未初始化")?;
+    let indexer_guard = state.get_indexer().map_err(|e| {
+        eprintln!("[搜索] 获取索引构建器失败: {:?}", e);
+        get_user_message(&AppError::IndexNotInitialized).to_string()
+    })?;
+    let indexer = indexer_guard.as_ref().ok_or_else(|| {
+        eprintln!("[搜索] 索引未初始化");
+        get_user_message(&AppError::IndexNotInitialized)
+    })?;
 
-    indexer
-        .delete_document(item_id)
-        .map_err(|e: IndexerError| format!("{e}"))?;
-    indexer.commit().map_err(|e: IndexerError| format!("{e}"))?;
+    indexer.delete_document(item_id).map_err(|e| {
+        eprintln!("[搜索] 删除文献索引失败: item_id={}, error={:?}", item_id, e);
+        get_user_message(&AppError::IndexOperationFailed).to_string()
+    })?;
+    indexer.commit().map_err(|e| {
+        eprintln!("[搜索] 提交索引失败: item_id={}, error={:?}", item_id, e);
+        get_user_message(&AppError::IndexOperationFailed).to_string()
+    })?;
 
     Ok(true)
 }

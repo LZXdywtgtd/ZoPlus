@@ -6,6 +6,7 @@ use db::{
     get_all_items, get_item_by_id, get_items_paginated as fetch_items_paginated, zotero_db_exists,
     ItemInfo,
 };
+use error::{get_user_message, AppError};
 use pdf::commands::{
     delete_all_annotations, delete_annotation, get_annotation_file_path, get_annotation_stats,
     has_annotations, load_annotations, load_annotations_by_page, save_annotation, save_annotations,
@@ -27,6 +28,8 @@ pub mod ai;
 pub mod sync;
 // PDF 模块
 pub mod pdf;
+// 统一错误处理模块
+pub mod error;
 
 /// Tauri 命令：获取所有文献列表
 ///
@@ -35,7 +38,10 @@ pub mod pdf;
 #[tauri::command]
 fn get_items() -> Result<Vec<ItemInfo>, String> {
     eprintln!("[命令] get_items 被调用");
-    get_all_items().map_err(|e| e.to_string())
+    get_all_items().map_err(|e| {
+        eprintln!("[数据库] 获取文献列表失败: {:?}", e);
+        get_user_message(&AppError::QueryFailed).to_string()
+    })
 }
 
 /// Tauri 命令：分页获取文献列表
@@ -52,7 +58,10 @@ fn get_items_paginated(offset: i32, limit: i32) -> Result<Vec<ItemInfo>, String>
         "[命令] get_items_paginated 被调用: offset={}, limit={}",
         offset, limit
     );
-    fetch_items_paginated(offset, limit).map_err(|e| e.to_string())
+    fetch_items_paginated(offset, limit).map_err(|e| {
+        eprintln!("[数据库] 分页获取文献列表失败: {:?}", e);
+        get_user_message(&AppError::QueryFailed).to_string()
+    })
 }
 
 /// Tauri 命令：根据ID获取单条文献
@@ -64,7 +73,10 @@ fn get_items_paginated(offset: i32, limit: i32) -> Result<Vec<ItemInfo>, String>
 /// * `Result<Option<ItemInfo>, String>` - 文献信息或错误信息
 #[tauri::command]
 fn get_item(item_id: i32) -> Result<Option<ItemInfo>, String> {
-    get_item_by_id(item_id).map_err(|e| e.to_string())
+    get_item_by_id(item_id).map_err(|e| {
+        eprintln!("[数据库] 获取文献详情失败: item_id={}, error={:?}", item_id, e);
+        get_user_message(&AppError::QueryFailed).to_string()
+    })
 }
 
 /// Tauri 命令：检查数据库状态

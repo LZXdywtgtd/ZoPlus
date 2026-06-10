@@ -2,6 +2,7 @@
 //!
 //! 本模块定义了所有与 PDF 标注相关的 Tauri Command，用于前端与后端的 IPC 通信
 
+use crate::error::{get_user_message, AppError};
 use crate::pdf::annotations::{Annotation, AnnotationType, PdfAnnotations};
 use crate::pdf::storage::AnnotationStorage;
 use std::path::PathBuf;
@@ -31,12 +32,18 @@ pub fn save_annotation(
     annotation: Annotation,
 ) -> Result<(), String> {
     let storage_dir = get_annotation_storage_dir(&app);
-    let storage = AnnotationStorage::new(storage_dir).map_err(|e| e.to_string())?;
+    let storage = AnnotationStorage::new(storage_dir).map_err(|e| {
+        eprintln!("[PDF标注] 存储初始化失败: {:?}", e);
+        get_user_message(&AppError::StorageInitFailed).to_string()
+    })?;
 
     let pdf_key = AnnotationStorage::generate_pdf_key(&pdf_path);
     storage
         .save_annotation(&pdf_key, &file_name, annotation)
-        .map_err(|e| e.to_string())
+        .map_err(|e| {
+            eprintln!("[PDF标注] 保存标注失败: pdf_key={}, error={:?}", pdf_key, e);
+            get_user_message(&AppError::AnnotationSaveFailed).to_string()
+        })
 }
 
 /// Tauri 命令：批量保存标注
@@ -56,16 +63,24 @@ pub fn save_annotations(
     annotations: Vec<Annotation>,
 ) -> Result<(), String> {
     let storage_dir = get_annotation_storage_dir(&app);
-    let storage = AnnotationStorage::new(storage_dir).map_err(|e| e.to_string())?;
+    let storage = AnnotationStorage::new(storage_dir).map_err(|e| {
+        eprintln!("[PDF标注] 存储初始化失败: {:?}", e);
+        get_user_message(&AppError::StorageInitFailed).to_string()
+    })?;
 
     let pdf_key = AnnotationStorage::generate_pdf_key(&pdf_path);
     let mut pdf_annotations = PdfAnnotations::new(pdf_key.clone(), file_name);
+    let count = annotations.len();
 
     for annotation in annotations {
         pdf_annotations.add_annotation(annotation);
     }
 
-    storage.save(&pdf_annotations).map_err(|e| e.to_string())
+    storage.save(&pdf_annotations).map_err(|e| {
+        eprintln!("[PDF标注] 批量保存标注失败: pdf_key={}, count={}, error={:?}",
+            pdf_key, count, e);
+        get_user_message(&AppError::AnnotationSaveFailed).to_string()
+    })
 }
 
 /// Tauri 命令：加载指定 PDF 的所有标注
@@ -78,10 +93,16 @@ pub fn save_annotations(
 #[tauri::command]
 pub fn load_annotations(app: AppHandle, pdf_path: String) -> Result<Vec<Annotation>, String> {
     let storage_dir = get_annotation_storage_dir(&app);
-    let storage = AnnotationStorage::new(storage_dir).map_err(|e| e.to_string())?;
+    let storage = AnnotationStorage::new(storage_dir).map_err(|e| {
+        eprintln!("[PDF标注] 存储初始化失败: {:?}", e);
+        get_user_message(&AppError::StorageInitFailed).to_string()
+    })?;
 
     let pdf_key = AnnotationStorage::generate_pdf_key(&pdf_path);
-    storage.get_annotations(&pdf_key).map_err(|e| e.to_string())
+    storage.get_annotations(&pdf_key).map_err(|e| {
+        eprintln!("[PDF标注] 加载标注失败: pdf_key={}, error={:?}", pdf_key, e);
+        get_user_message(&AppError::AnnotationLoadFailed).to_string()
+    })
 }
 
 /// Tauri 命令：加载指定 PDF 指定页面的标注
@@ -99,12 +120,19 @@ pub fn load_annotations_by_page(
     page: u32,
 ) -> Result<Vec<Annotation>, String> {
     let storage_dir = get_annotation_storage_dir(&app);
-    let storage = AnnotationStorage::new(storage_dir).map_err(|e| e.to_string())?;
+    let storage = AnnotationStorage::new(storage_dir).map_err(|e| {
+        eprintln!("[PDF标注] 存储初始化失败: {:?}", e);
+        get_user_message(&AppError::StorageInitFailed).to_string()
+    })?;
 
     let pdf_key = AnnotationStorage::generate_pdf_key(&pdf_path);
     storage
         .get_annotations_by_page(&pdf_key, page)
-        .map_err(|e| e.to_string())
+        .map_err(|e| {
+            eprintln!("[PDF标注] 按页加载标注失败: pdf_key={}, page={}, error={:?}",
+                pdf_key, page, e);
+            get_user_message(&AppError::AnnotationLoadFailed).to_string()
+        })
 }
 
 /// Tauri 命令：更新单条标注
@@ -122,12 +150,18 @@ pub fn update_annotation(
     annotation: Annotation,
 ) -> Result<bool, String> {
     let storage_dir = get_annotation_storage_dir(&app);
-    let storage = AnnotationStorage::new(storage_dir).map_err(|e| e.to_string())?;
+    let storage = AnnotationStorage::new(storage_dir).map_err(|e| {
+        eprintln!("[PDF标注] 存储初始化失败: {:?}", e);
+        get_user_message(&AppError::StorageInitFailed).to_string()
+    })?;
 
     let pdf_key = AnnotationStorage::generate_pdf_key(&pdf_path);
     storage
         .update_annotation(&pdf_key, annotation)
-        .map_err(|e| e.to_string())
+        .map_err(|e| {
+            eprintln!("[PDF标注] 更新标注失败: pdf_key={}, error={:?}", pdf_key, e);
+            get_user_message(&AppError::AnnotationSaveFailed).to_string()
+        })
 }
 
 /// Tauri 命令：删除单条标注
@@ -145,12 +179,19 @@ pub fn delete_annotation(
     annotation_id: String,
 ) -> Result<bool, String> {
     let storage_dir = get_annotation_storage_dir(&app);
-    let storage = AnnotationStorage::new(storage_dir).map_err(|e| e.to_string())?;
+    let storage = AnnotationStorage::new(storage_dir).map_err(|e| {
+        eprintln!("[PDF标注] 存储初始化失败: {:?}", e);
+        get_user_message(&AppError::StorageInitFailed).to_string()
+    })?;
 
     let pdf_key = AnnotationStorage::generate_pdf_key(&pdf_path);
     storage
         .delete_annotation(&pdf_key, &annotation_id)
-        .map_err(|e| e.to_string())
+        .map_err(|e| {
+            eprintln!("[PDF标注] 删除标注失败: pdf_key={}, annotation_id={}, error={:?}",
+                pdf_key, annotation_id, e);
+            get_user_message(&AppError::AnnotationDeleteFailed).to_string()
+        })
 }
 
 /// Tauri 命令：删除指定 PDF 的所有标注
@@ -163,10 +204,16 @@ pub fn delete_annotation(
 #[tauri::command]
 pub fn delete_all_annotations(app: AppHandle, pdf_path: String) -> Result<bool, String> {
     let storage_dir = get_annotation_storage_dir(&app);
-    let storage = AnnotationStorage::new(storage_dir).map_err(|e| e.to_string())?;
+    let storage = AnnotationStorage::new(storage_dir).map_err(|e| {
+        eprintln!("[PDF标注] 存储初始化失败: {:?}", e);
+        get_user_message(&AppError::StorageInitFailed).to_string()
+    })?;
 
     let pdf_key = AnnotationStorage::generate_pdf_key(&pdf_path);
-    storage.delete(&pdf_key).map_err(|e| e.to_string())
+    storage.delete(&pdf_key).map_err(|e| {
+        eprintln!("[PDF标注] 删除所有标注失败: pdf_key={}, error={:?}", pdf_key, e);
+        get_user_message(&AppError::AnnotationDeleteFailed).to_string()
+    })
 }
 
 /// Tauri 命令：检查指定 PDF 是否有标注
@@ -221,12 +268,18 @@ pub fn get_annotation_file_path(app: AppHandle, pdf_path: String) -> Option<Stri
 #[tauri::command]
 pub fn get_annotation_stats(app: AppHandle, pdf_path: String) -> Result<AnnotationStats, String> {
     let storage_dir = get_annotation_storage_dir(&app);
-    let storage = AnnotationStorage::new(storage_dir).map_err(|e| e.to_string())?;
+    let storage = AnnotationStorage::new(storage_dir).map_err(|e| {
+        eprintln!("[PDF标注] 存储初始化失败: {:?}", e);
+        get_user_message(&AppError::StorageInitFailed).to_string()
+    })?;
 
     let pdf_key = AnnotationStorage::generate_pdf_key(&pdf_path);
     let annotations = storage
         .get_annotations(&pdf_key)
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            eprintln!("[PDF标注] 获取标注统计失败: pdf_key={}, error={:?}", pdf_key, e);
+            get_user_message(&AppError::AnnotationLoadFailed).to_string()
+        })?;
 
     let mut stats = AnnotationStats::default();
 
