@@ -3,10 +3,150 @@
 //! 本模块提供文献基本信息的只读查询功能。
 //! 查询数据包括：文献ID、标题、合并作者（分号分隔）、发表年份
 
-use rusqlite::params;
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
 use super::connection::{query_no_params, query_with_mapper, DbError};
+
+/// 作者关联表名缓存（避免每次查询都检测）
+static AUTHOR_TABLE_NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// 检测实际使用的作者关联表名
+///
+/// Zotero 数据库中作者关联表的表名可能是 itemCreators、itemAuthors 或 itemCreator
+/// 本函数通过检测 sqlite_master 表来确定实际使用的表名
+///
+/// # 参数
+/// * `conn` - 数据库连接
+///
+/// # 返回值
+/// * `String` - 检测到的作者关联表名
+fn detect_author_table_name(conn: &Connection) -> String {
+    // 如果已经检测过，直接返回缓存值
+    if let Some(cached) = AUTHOR_TABLE_NAME.get() {
+        return cached.clone();
+    }
+
+    let candidates = ["itemCreators", "itemAuthors", "itemCreator"];
+    for table in candidates {
+        let exists = conn
+            .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                [table],
+                |_| Ok(true),
+            )
+            .unwrap_or(false);
+        if exists {
+            eprintln!("[数据库] 检测到作者关联表: {}", table);
+            let result = table.to_string();
+            // 缓存检测结果
+            let _ = AUTHOR_TABLE_NAME.set(result.clone());
+            return result;
+        }
+    }
+    // 默认值（标准 Zotero 表名）
+    eprintln!("[数据库] 未检测到作者关联表，使用默认值: itemCreators");
+    let default = "itemCreators".to_string();
+    let _ = AUTHOR_TABLE_NAME.set(default.clone());
+    default
+}
+
+/// 获取带作者信息的 SQL 查询语句
+///
+/// # 参数
+/// * `author_table` - 作者关联表名
+///
+/// # 返回值
+/// * `String` - 完整的 SQL 查询语句
+fn build_items_sql(author_table: &str) -> String {
+    format!(
+        r#"
+        SELECT
+            i.itemID as item_id,
+            i.title as title,
+            i.date as year,
+            (
+                SELECT GROUP_CONCAT(
+                    COALESCE(c.lastName, '') || COALESCE(c.firstName, ''),
+                    '; '
+                )
+                FROM {} ia
+                JOIN creators c ON ia.creatorID = c.creatorID
+                WHERE ia.itemID = i.itemID
+                ORDER BY ia.orderIndex
+            ) as authors
+        FROM items i
+        WHERE i.itemID IS NOT NULL
+        ORDER BY i.date DESC, i.title ASC
+        LIMIT 100
+        "#,
+        author_table
+    )
+}
+
+/// 获取带作者信息的分页 SQL 查询语句
+///
+/// # 参数
+/// * `author_table` - 作者关联表名
+///
+/// # 返回值
+/// * `String` - 完整的分页 SQL 查询语句
+fn build_items_paginated_sql(author_table: &str) -> String {
+    format!(
+        r#"
+        SELECT
+            i.itemID as item_id,
+            i.title as title,
+            i.date as year,
+            (
+                SELECT GROUP_CONCAT(
+                    COALESCE(c.lastName, '') || COALESCE(c.firstName, ''),
+                    '; '
+                )
+                FROM {} ia
+                JOIN creators c ON ia.creatorID = c.creatorID
+                WHERE ia.itemID = i.itemID
+                ORDER BY ia.orderIndex
+            ) as authors
+        FROM items i
+        WHERE i.itemID IS NOT NULL
+        ORDER BY i.date DESC, i.title ASC
+        LIMIT ? OFFSET ?
+        "#,
+        author_table
+    )
+}
+
+/// 获取单条文献信息的 SQL 查询语句
+///
+/// # 参数
+/// * `author_table` - 作者关联表名
+///
+/// # 返回值
+/// * `String` - 完整的 SQL 查询语句
+fn build_item_by_id_sql(author_table: &str) -> String {
+    format!(
+        r#"
+        SELECT
+            i.itemID as item_id,
+            i.title as title,
+            i.date as year,
+            (
+                SELECT GROUP_CONCAT(
+                    COALESCE(c.lastName, '') || COALESCE(c.firstName, ''),
+                    '; '
+                )
+                FROM {} ia
+                JOIN creators c ON ia.creatorID = c.creatorID
+                WHERE ia.itemID = i.itemID
+                ORDER BY ia.orderIndex
+            ) as authors
+        FROM items i
+        WHERE i.itemID = ?
+        "#,
+        author_table
+    )
+}
 
 /// 文献基本信息结构体
 ///
@@ -33,39 +173,27 @@ pub struct ItemInfo {
 /// * `Result<Vec<ItemInfo>, DbError>` - 文献信息列表
 ///
 /// # 查询逻辑
-/// 1. 从 items 表查询 itemID、title、date
-/// 2. 通过 itemAuthors 表关联 creators 表获取作者信息
-/// 3. 多个作者按 order 排序后用分号合并
-/// 4. 默认限制返回 100 条记录，避免查询过慢
+/// 1. 检测数据库中实际的作者关联表名
+/// 2. 从 items 表查询 itemID、title、date
+/// 3. 通过 itemCreators 表关联 creators 表获取作者信息
+/// 4. 多个作者按 orderIndex 排序后用分号合并
+/// 5. 默认限制返回 100 条记录，避免查询过慢
 pub fn get_all_items() -> Result<Vec<ItemInfo>, DbError> {
     let start = std::time::Instant::now();
     eprintln!("[文献查询] 开始查询文献列表...");
 
-    // SQL 查询：获取文献信息及作者
-    // 子查询用于按 itemID 和 order 聚合作者姓名
-    // 添加 LIMIT 100 限制返回记录数，避免查询过慢
-    let sql = r#"
-        SELECT
-            i.itemID as item_id,
-            i.title as title,
-            i.date as year,
-            (
-                SELECT GROUP_CONCAT(
-                    COALESCE(c.lastName, '') || COALESCE(c.firstName, ''),
-                    '; '
-                )
-                FROM itemAuthors ia
-                JOIN creators c ON ia.authorID = c.creatorID
-                WHERE ia.itemID = i.itemID
-                ORDER BY ia."order"
-            ) as authors
-        FROM items i
-        WHERE i.itemID IS NOT NULL
-        ORDER BY i.date DESC, i.title ASC
-        LIMIT 100
-    "#;
+    // 获取数据库连接并检测作者表名
+    let guard = super::connection::get_connection()?;
+    let conn = guard.as_ref().ok_or_else(|| {
+        DbError::ConnectionFailed("数据库连接未初始化".to_string())
+    })?;
+    let author_table = detect_author_table_name(conn);
+    let sql = build_items_sql(&author_table);
 
-    let result = query_no_params(sql, |row| {
+    eprintln!("[文献查询] 使用的作者表: {}", author_table);
+    eprintln!("[文献查询] SQL: {}", sql);
+
+    let result = query_no_params(&sql, |row| {
         Ok(ItemInfo {
             item_id: row.get(0)?,
             title: row.get::<_, String>(1).unwrap_or_default(),
@@ -92,26 +220,17 @@ pub fn get_all_items() -> Result<Vec<ItemInfo>, DbError> {
 /// # 返回值
 /// * `Result<Option<ItemInfo>, DbError>` - 文献信息（不存在时返回 None）
 pub fn get_item_by_id(item_id: i32) -> Result<Option<ItemInfo>, DbError> {
-    let sql = r#"
-        SELECT
-            i.itemID as item_id,
-            i.title as title,
-            i.date as year,
-            (
-                SELECT GROUP_CONCAT(
-                    COALESCE(c.lastName, '') || COALESCE(c.firstName, ''),
-                    '; '
-                )
-                FROM itemAuthors ia
-                JOIN creators c ON ia.authorID = c.creatorID
-                WHERE ia.itemID = i.itemID
-                ORDER BY ia."order"
-            ) as authors
-        FROM items i
-        WHERE i.itemID = ?
-    "#;
+    // 获取数据库连接并检测作者表名
+    let guard = super::connection::get_connection()?;
+    let conn = guard.as_ref().ok_or_else(|| {
+        DbError::ConnectionFailed("数据库连接未初始化".to_string())
+    })?;
+    let author_table = detect_author_table_name(conn);
+    let sql = build_item_by_id_sql(&author_table);
 
-    let results = query_with_mapper(sql, params![item_id], |row| {
+    eprintln!("[文献查询] 根据ID查询文献: item_id={}, 作者表={}", item_id, author_table);
+
+    let results = query_with_mapper(&sql, params![item_id], |row| {
         Ok(ItemInfo {
             item_id: row.get(0)?,
             title: row.get::<_, String>(1).unwrap_or_default(),
@@ -138,28 +257,17 @@ pub fn get_items_paginated(offset: i32, limit: i32) -> Result<Vec<ItemInfo>, DbE
         offset, limit
     );
 
-    let sql = r#"
-        SELECT
-            i.itemID as item_id,
-            i.title as title,
-            i.date as year,
-            (
-                SELECT GROUP_CONCAT(
-                    COALESCE(c.lastName, '') || COALESCE(c.firstName, ''),
-                    '; '
-                )
-                FROM itemAuthors ia
-                JOIN creators c ON ia.authorID = c.creatorID
-                WHERE ia.itemID = i.itemID
-                ORDER BY ia."order"
-            ) as authors
-        FROM items i
-        WHERE i.itemID IS NOT NULL
-        ORDER BY i.date DESC, i.title ASC
-        LIMIT ? OFFSET ?
-    "#;
+    // 获取数据库连接并检测作者表名
+    let guard = super::connection::get_connection()?;
+    let conn = guard.as_ref().ok_or_else(|| {
+        DbError::ConnectionFailed("数据库连接未初始化".to_string())
+    })?;
+    let author_table = detect_author_table_name(conn);
+    let sql = build_items_paginated_sql(&author_table);
 
-    let result = query_with_mapper(sql, params![limit, offset], |row| {
+    eprintln!("[文献查询] 使用的作者表: {}", author_table);
+
+    let result = query_with_mapper(&sql, params![limit, offset], |row| {
         Ok(ItemInfo {
             item_id: row.get(0)?,
             title: row.get::<_, String>(1).unwrap_or_default(),

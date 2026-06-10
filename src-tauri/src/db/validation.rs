@@ -15,7 +15,7 @@ const ZOTERO_REQUIRED_TABLES: &[&str] = &[
 
 /// Zotero 数据库可选但推荐的表
 const ZOTERO_OPTIONAL_TABLES: &[&str] = &[
-    "itemAuthors",
+    "itemCreators",
     "creators",
     "itemTags",
     "itemTypes",
@@ -254,10 +254,10 @@ mod tests {
 
     #[test]
     fn test_validation_message_format() {
-        let missing = vec!["itemAuthors", "creators"];
+        let missing = vec!["itemCreators", "creators"];
         let available = vec!["items".to_string(), "collections".to_string(), "tags".to_string()];
         let msg = get_db_validation_message(&missing, &available);
-        assert!(msg.contains("itemAuthors"));
+        assert!(msg.contains("itemCreators"));
         assert!(msg.contains("creators"));
         assert!(msg.contains("items"));
     }

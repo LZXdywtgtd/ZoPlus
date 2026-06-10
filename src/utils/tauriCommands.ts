@@ -55,6 +55,31 @@ export async function checkDbStatus(): Promise<boolean> {
   return await invoke<boolean>('check_db_status');
 }
 
+/// 数据库诊断信息结构
+export interface DatabaseDiagnosis {
+  total_tables: number;
+  required_present: string[];
+  required_missing: string[];
+  optional_present: string[];
+  optional_missing: string[];
+  all_tables: string[];
+}
+
+/// 获取数据库诊断信息
+///
+/// @returns Promise<DatabaseDiagnosis> 诊断信息
+export async function getDbDiagnosis(): Promise<DatabaseDiagnosis> {
+  return await invoke<DatabaseDiagnosis>('get_db_diagnosis');
+}
+
+/// 手动选择数据库路径
+///
+/// @param path - 用户选择的数据库文件路径
+/// @returns Promise<boolean> 验证成功返回 true
+export async function selectDatabasePath(path: string): Promise<boolean> {
+  return await invoke<boolean>('select_database_path', { path });
+}
+
 // ============== PDF 标注相关 ==============
 
 /// 标注类型
