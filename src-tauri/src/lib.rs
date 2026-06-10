@@ -30,6 +30,14 @@ use ai::citation_commands::{
     parse_citation_text, format_citation, format_citations_batch,
     enrich_citation_metadata, get_citation_formats, create_formatter_with_config,
 };
+use ai::rag_commands::{
+    ai_chat, ai_chat_stream, get_chat_history, clear_chat_history,
+    get_chat_context, update_rag_config, get_rag_config, RagState,
+};
+use ai::comparison_commands::{
+    compare_articles, get_comparison_result, has_comparison_result,
+    export_comparison, get_comparison_as_markdown, get_comparison_as_csv,
+};
 use std::path::PathBuf;
 
 // 数据库访问模块
@@ -236,10 +244,14 @@ pub fn run() {
     //初始化 AI 状态
     let ai_state = AIState::new();
 
+    // 初始化 RAG 状态
+    let rag_state = RagState::new();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(search_state)
         .manage(ai_state)
+        .manage(rag_state)
         .invoke_handler(tauri::generate_handler![
             get_items,
             get_items_paginated,
@@ -303,6 +315,21 @@ pub fn run() {
             enrich_citation_metadata,
             get_citation_formats,
             create_formatter_with_config,
+            // RAG 跨文献问答命令
+            ai_chat,
+            ai_chat_stream,
+            get_chat_history,
+            clear_chat_history,
+            get_chat_context,
+            update_rag_config,
+            get_rag_config,
+            // 文献对比命令
+            compare_articles,
+            get_comparison_result,
+            has_comparison_result,
+            export_comparison,
+            get_comparison_as_markdown,
+            get_comparison_as_csv,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -44,6 +44,10 @@ interface AppState {
   summaryStatus: SummaryStatus;
   currentSummary: ArticleSummary | null;
 
+  // 批量选择状态
+  selectedItemIds: number[];
+  setSelectedItemIds: (ids: number[]) => void;
+
   // 设置数据库状态
   setDbStatus: (status: Partial<DbStatus>) => void;
 
@@ -90,6 +94,9 @@ const useAppStore = create<AppState>((set) => ({
   },
   currentSummary: null,
 
+  // 初始选择状态
+  selectedItemIds: [],
+
   // 设置数据库状态
   setDbStatus: (status) =>
     set((state) => ({
@@ -131,6 +138,9 @@ const useAppStore = create<AppState>((set) => ({
 
   setCurrentSummary: (summary) =>
     set({ currentSummary: summary }),
+
+  // 批量选择操作
+  setSelectedItemIds: (ids) => set({ selectedItemIds: ids }),
 }));
 
 export default useAppStore;

@@ -29,6 +29,10 @@ pub mod summary;
 pub mod note;
 pub mod citation;
 pub mod citation_commands;
+pub mod rag;
+pub mod rag_commands;
+pub mod comparison;
+pub mod comparison_commands;
 
 pub use traits::AIProvider;
 pub use errors::AIError;
@@ -41,3 +45,7 @@ pub use citation::{
     CitationFormat, CitationFormatter, CitationMetadata, FormattedCitation, ParsedCitation,
     Author, ItemType, FormatterConfig, FormatterLanguage,
 };
+pub use rag::{ChatMessage, DocumentContext, RagConfig, RagEngine, RagError};
+pub use rag_commands::RagState;
+pub use comparison::{ArticleComparison, ComparisonDimensions, Contradiction, Consensus, CitationRelation, ComparisonGenerator, ComparisonError};
+pub use comparison_commands::{compare_articles, get_comparison_result, has_comparison_result, export_comparison, get_comparison_as_markdown, get_comparison_as_csv};

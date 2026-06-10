@@ -8,22 +8,49 @@ import {
   SearchOutlined,
   CloudSyncOutlined,
   SettingOutlined,
+  FormatPainterOutlined,
+  RobotOutlined,
+  SwapOutlined,
 } from '@ant-design/icons';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import DbStatusAlert from '../components/DbStatusAlert';
 import ItemList from '../components/ItemList';
 import Search from '../pages/Search';
+import CitationFormatter from '../pages/CitationFormatter';
+import AIChat from '../pages/AIChat';
+import ArticleComparison from '../pages/ArticleComparison';
+import useAppStore from '../store/appStore';
 
 const { Sider, Content } = Layout;
 const { Title, Text } = Typography;
 
 /// 菜单项类型
-type MenuItemKey = 'items' | 'search' | 'sync' | 'settings';
+type MenuItemKey = 'items' | 'search' | 'sync' | 'settings' | 'citation' | 'aichat' | 'comparison';
 
 /// 主界面布局页面组件
 function Dashboard() {
   // 当前选中的菜单项
   const [selectedKey, setSelectedKey] = useState<MenuItemKey>('items');
+  // 批量对比选中的文献ID
+  const { setSelectedItemIds } = useAppStore();
+
+  // 页面加载时检查是否有预选的对比文献
+  useEffect(() => {
+    const storedIds = localStorage.getItem('zoplus_comparison_ids');
+    if (storedIds) {
+      try {
+        const ids = JSON.parse(storedIds);
+        if (Array.isArray(ids) && ids.length > 0) {
+          setSelectedItemIds(ids);
+          setSelectedKey('comparison');
+          // 清除存储以避免重复使用
+          localStorage.removeItem('zoplus_comparison_ids');
+        }
+      } catch (e) {
+        console.error('Failed to parse stored comparison IDs:', e);
+      }
+    }
+  }, [setSelectedItemIds]);
 
   // 渲染右侧内容区域
   const renderContent = () => {
@@ -55,6 +82,15 @@ function Dashboard() {
             <Text type="secondary">设置功能开发中...</Text>
           </Space>
         );
+      case 'citation':
+        // 参考文献格式化页面
+        return <CitationFormatter />;
+      case 'aichat':
+        // AI 跨文献问答页面
+        return <AIChat />;
+      case 'comparison':
+        // 文献对比页面
+        return <ArticleComparison />;
       default:
         return null;
     }
@@ -107,6 +143,21 @@ function Dashboard() {
               key: 'settings',
               icon: <SettingOutlined />,
               label: '设置',
+            },
+            {
+              key: 'citation',
+              icon: <FormatPainterOutlined />,
+              label: '引用格式化',
+            },
+            {
+              key: 'aichat',
+              icon: <RobotOutlined />,
+              label: 'AI 问答',
+            },
+            {
+              key: 'comparison',
+              icon: <SwapOutlined />,
+              label: '文献对比',
             },
           ]}
         />

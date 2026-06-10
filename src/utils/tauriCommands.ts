@@ -501,3 +501,207 @@ export async function exportAllNotesAsMarkdown(notes: Note[], itemTitle: string)
     item_title: itemTitle,
   });
 }
+
+// ============== RAG 跨文献问答相关 ==============
+
+/// 文献上下文结构
+export interface DocumentContext {
+  item_id: number;
+  title: string;
+  authors: string;
+  year: string;
+  abstract_text: string;
+  keywords: string;
+  score: number;
+  citation_key: string;
+}
+
+/// RAG 聊天消息结构
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  citations: DocumentContext[];
+  timestamp: number;
+}
+
+/// RAG 配置结构
+export interface RagConfig {
+  top_k: number;
+  streaming: boolean;
+  min_score: number;
+}
+
+/// 发送聊天消息（非流式）
+///
+/// @param message - 用户消息
+/// @returns Promise<ChatMessage> 助手回复
+/// @throws AI 未配置或生成失败时抛出异常
+export async function aiChat(message: string): Promise<ChatMessage> {
+  return await invoke<ChatMessage>('ai_chat', { message });
+}
+
+///发送聊天消息（流式）
+///
+/// @param message - 用户消息
+/// @returns Promise<string[]> 流式输出的文本片段
+/// @throws AI 未配置或生成失败时抛出异常
+export async function aiChatStream(message: string): Promise<string[]> {
+  return await invoke<string[]>('ai_chat_stream', { message });
+}
+
+/// 获取聊天历史
+///
+/// @returns Promise<ChatMessage[]> 聊天消息列表
+export async function getChatHistory(): Promise<ChatMessage[]> {
+  return await invoke<ChatMessage[]>('get_chat_history');
+}
+
+/// 清除聊天历史
+///
+/// @returns Promise<boolean> 清除成功返回 true
+export async function clearChatHistory(): Promise<boolean> {
+  return await invoke<boolean>('clear_chat_history');
+}
+
+/// 获取当前引用的文献上下文
+///
+/// @returns Promise<DocumentContext[]> 文献上下文列表
+export async function getChatContext(): Promise<DocumentContext[]> {
+  return await invoke<DocumentContext[]>('get_chat_context');
+}
+
+/// 更新 RAG 配置
+///
+/// @param config - 配置对象（可选字段）
+/// @returns Promise<RagConfig> 更新后的完整配置
+export async function updateRagConfig(config: Partial<RagConfig>): Promise<RagConfig> {
+  return await invoke<RagConfig>('update_rag_config', {
+    top_k: config.top_k,
+    streaming: config.streaming,
+    min_score: config.min_score,
+  });
+}
+
+/// 获取 RAG 配置
+///
+/// @returns Promise<RagConfig> 当前配置
+export async function getRagConfig(): Promise<RagConfig> {
+  return await invoke<RagConfig>('get_rag_config');
+}
+
+// ============== 文献对比相关 ==============
+
+/// 对比维度结构
+export interface ComparisonDimensions {
+  research_questions: string[];
+  research_methods: string[];
+  key_conclusions: string[];
+  innovations: string[];
+  limitations: string[];
+  citations: string[];
+}
+
+/// 矛盾点分析
+export interface Contradiction {
+  description: string;
+  involved_indices: number[];
+  contradiction_type: string;
+}
+
+/// 共识点分析
+export interface Consensus {
+  description: string;
+  involved_indices: number[];
+}
+
+/// 引用关系
+export interface CitationRelation {
+  from_index: number;
+  to_index: number;
+  description: string;
+}
+
+/// 文献对比结构
+export interface ArticleComparison {
+  comparison_id: string;
+  item_ids: number[];
+  titles: string[];
+  authors: string[];
+  years: string[];
+  dimensions: ComparisonDimensions;
+  contradictions: Contradiction[];
+  consensus: Consensus[];
+  citation_relations: CitationRelation[];
+  generated_at: number;
+  version: number;
+}
+
+/// 对比多篇文献
+///
+/// @param itemIds - 文献 ID 列表（2-5篇）
+/// @returns Promise<ArticleComparison> 对比结果
+/// @throws AI 未配置或对比失败时抛出异常
+export async function compareArticles(itemIds: number[]): Promise<ArticleComparison> {
+  return await invoke<ArticleComparison>('compare_articles', {
+    item_ids: itemIds,
+  });
+}
+
+/// 获取缓存的对比结果
+///
+/// @param itemIds - 文献 ID 列表
+/// @returns Promise<ArticleComparison | null> 对比结果，不存在时返回 null
+export async function getComparisonResult(itemIds: number[]): Promise<ArticleComparison | null> {
+  return await invoke<ArticleComparison | null>('get_comparison_result', {
+    item_ids: itemIds,
+  });
+}
+
+/// 检查是否有缓存的对比结果
+///
+/// @param itemIds - 文献 ID 列表
+/// @returns Promise<boolean> 是否有缓存
+export async function hasComparisonResult(itemIds: number[]): Promise<boolean> {
+  return await invoke<boolean>('has_comparison_result', {
+    item_ids: itemIds,
+  });
+}
+
+/// 导出对比结果
+///
+/// @param comparison - 对比结果
+/// @param format - 导出格式（markdown 或 csv）
+/// @returns Promise<string> 导出的内容
+/// @throws 不支持的格式时抛出异常
+export async function exportComparison(
+  comparison: ArticleComparison,
+  format: 'markdown' | 'csv'
+): Promise<string> {
+  return await invoke<string>('export_comparison', {
+    comparison: comparison,
+    format: format,
+  });
+}
+
+/// 获取对比结果的 Markdown 格式
+///
+/// @param itemIds - 文献 ID 列表
+/// @returns Promise<string> Markdown 格式的对比结果
+/// @throws 没有缓存时抛出异常
+export async function getComparisonAsMarkdown(itemIds: number[]): Promise<string> {
+  return await invoke<string>('get_comparison_as_markdown', {
+    item_ids: itemIds,
+  });
+}
+
+/// 获取对比结果的 CSV 格式
+///
+/// @param itemIds - 文献 ID 列表
+/// @returns Promise<string> CSV 格式的对比结果
+/// @throws 没有缓存时抛出异常
+export async function getComparisonAsCsv(itemIds: number[]): Promise<string> {
+  return await invoke<string>('get_comparison_as_csv', {
+    item_ids: itemIds,
+  });
+}

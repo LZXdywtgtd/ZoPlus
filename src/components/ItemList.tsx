@@ -1,10 +1,10 @@
 //! 文献列表展示组件
 //!
-//! 以表格形式展示文献列表，支持加载状态和错误提示
+//! 以表格形式展示文献列表，支持加载状态和错误提示和批量选择
 
 import { useEffect, useRef } from 'react';
-import { Table, Alert, Space, Typography, Empty, Tag } from 'antd';
-import { FileTextOutlined, LoadingOutlined } from '@ant-design/icons';
+import { Table, Alert, Space, Typography, Empty, Tag, Button, message } from 'antd';
+import { FileTextOutlined, LoadingOutlined, SwapOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import useAppStore from '../store/appStore';
 import { getItems } from '../utils/tauriCommands';
@@ -71,7 +71,32 @@ const columns: ColumnsType<ItemInfo> = [
 /// 文献列表展示组件
 function ItemList() {
   // 从状态管理获取文献列表和相关状态
-  const { items, itemsLoading, itemsError, dbStatus } = useAppStore();
+  const { items, itemsLoading, itemsError, dbStatus, selectedItemIds, setSelectedItemIds } = useAppStore();
+
+  // 处理批量选择变化
+  const handleSelectionChange = (selectedRowKeys: React.Key[]) => {
+    const ids = selectedRowKeys as number[];
+    if (ids.length > 5) {
+      message.warning('最多支持5篇文献进行对比');
+      // 只保留前5个
+      setSelectedItemIds(ids.slice(0, 5));
+    } else {
+      setSelectedItemIds(ids);
+    }
+  };
+
+  // 跳转到对比页面
+  const handleBatchCompare = () => {
+    if (selectedItemIds.length < 2) {
+      message.warning('请至少选择2篇文献进行对比');
+      return;
+    }
+    // 通过修改 URL 或状态跳转到对比页面
+    // 这里暂时通过 localStorage 传递选择的文献
+    localStorage.setItem('zoplus_comparison_ids', JSON.stringify(selectedItemIds));
+    window.location.hash = '#/comparison';
+    window.location.reload();
+  };
 
   // 加载状态追踪，避免重复调用
   const loadTriggerRef = useRef<{ isLoading: boolean; dbConnected: boolean }>({
@@ -177,7 +202,18 @@ function ItemList() {
   // 渲染文献列表表格
   return (
     <Space direction="vertical" style={{ width: '100%' }} size="large">
-      <Title level={5}>文献列表</Title>
+      <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+        <Title level={5}>文献列表</Title>
+        {selectedItemIds.length > 0 && (
+          <Button
+            type="primary"
+            icon={<SwapOutlined />}
+            onClick={handleBatchCompare}
+          >
+            批量对比 ({selectedItemIds.length})
+          </Button>
+        )}
+      </Space>
       <Table
         columns={columns}
         dataSource={items}
@@ -189,6 +225,11 @@ function ItemList() {
           showTotal: (total) => `共 ${total} 条文献`,
         }}
         size="middle"
+        rowSelection={{
+          selectedRowKeys: selectedItemIds,
+          onChange: handleSelectionChange,
+          type: 'checkbox',
+        }}
       />
     </Space>
   );
