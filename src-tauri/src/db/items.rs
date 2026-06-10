@@ -63,8 +63,8 @@ fn build_items_sql(author_table: &str) -> String {
         r#"
         SELECT
             i.itemID as item_id,
-            i.title as title,
-            i.date as year,
+            title_data.value as title,
+            date_data.value as year,
             (
                 SELECT GROUP_CONCAT(
                     COALESCE(c.lastName, '') || COALESCE(c.firstName, ''),
@@ -76,8 +76,12 @@ fn build_items_sql(author_table: &str) -> String {
                 ORDER BY ia.orderIndex
             ) as authors
         FROM items i
+        LEFT JOIN itemData title_data ON i.itemID = title_data.itemID
+            AND title_data.fieldID = (SELECT fieldID FROM itemDataFields WHERE fieldName = 'title')
+        LEFT JOIN itemData date_data ON i.itemID = date_data.itemID
+            AND date_data.fieldID = (SELECT fieldID FROM itemDataFields WHERE fieldName = 'date')
         WHERE i.itemID IS NOT NULL
-        ORDER BY i.date DESC, i.title ASC
+        ORDER BY date_data.value DESC, title_data.value ASC
         LIMIT 100
         "#,
         author_table
@@ -96,8 +100,8 @@ fn build_items_paginated_sql(author_table: &str) -> String {
         r#"
         SELECT
             i.itemID as item_id,
-            i.title as title,
-            i.date as year,
+            title_data.value as title,
+            date_data.value as year,
             (
                 SELECT GROUP_CONCAT(
                     COALESCE(c.lastName, '') || COALESCE(c.firstName, ''),
@@ -109,8 +113,12 @@ fn build_items_paginated_sql(author_table: &str) -> String {
                 ORDER BY ia.orderIndex
             ) as authors
         FROM items i
+        LEFT JOIN itemData title_data ON i.itemID = title_data.itemID
+            AND title_data.fieldID = (SELECT fieldID FROM itemDataFields WHERE fieldName = 'title')
+        LEFT JOIN itemData date_data ON i.itemID = date_data.itemID
+            AND date_data.fieldID = (SELECT fieldID FROM itemDataFields WHERE fieldName = 'date')
         WHERE i.itemID IS NOT NULL
-        ORDER BY i.date DESC, i.title ASC
+        ORDER BY date_data.value DESC, title_data.value ASC
         LIMIT ? OFFSET ?
         "#,
         author_table
@@ -129,8 +137,8 @@ fn build_item_by_id_sql(author_table: &str) -> String {
         r#"
         SELECT
             i.itemID as item_id,
-            i.title as title,
-            i.date as year,
+            title_data.value as title,
+            date_data.value as year,
             (
                 SELECT GROUP_CONCAT(
                     COALESCE(c.lastName, '') || COALESCE(c.firstName, ''),
@@ -142,6 +150,10 @@ fn build_item_by_id_sql(author_table: &str) -> String {
                 ORDER BY ia.orderIndex
             ) as authors
         FROM items i
+        LEFT JOIN itemData title_data ON i.itemID = title_data.itemID
+            AND title_data.fieldID = (SELECT fieldID FROM itemDataFields WHERE fieldName = 'title')
+        LEFT JOIN itemData date_data ON i.itemID = date_data.itemID
+            AND date_data.fieldID = (SELECT fieldID FROM itemDataFields WHERE fieldName = 'date')
         WHERE i.itemID = ?
         "#,
         author_table
