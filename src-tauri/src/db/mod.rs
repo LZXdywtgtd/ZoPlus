@@ -22,6 +22,6 @@ pub use connection::{get_current_db_path, get_database_diagnosis, reset_connecti
 pub use items::{get_all_items, get_all_items_async, get_item_by_id_async, get_items_paginated_async, ItemInfo};
 pub use path::{get_zotero_database_path, zotero_db_exists};
 pub use validation::{
-    diagnose_database, get_all_table_names, validate_sqlite_file, validate_zotero_database,
-    DbValidationError, DatabaseDiagnosis,
+    diagnose_database, explore_database_structure, get_all_table_names, validate_sqlite_file, validate_zotero_database,
+    ColumnInfo, DatabaseDiagnosis, DatabaseStructure, DbValidationError, TableStructure,
 };

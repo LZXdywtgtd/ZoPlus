@@ -32,3 +32,6 @@ dirs = "5"
 # 错误处理
 thiserror = "2"
 
+[dev-dependencies]
+tempfile = "3"
+

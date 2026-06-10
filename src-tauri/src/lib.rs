@@ -5,8 +5,9 @@
 use db::{
     get_all_items_async, get_current_db_path, get_database_diagnosis, get_item_by_id_async,
     get_items_paginated_async as fetch_items_paginated_async, reset_connection, validate_sqlite_file,
-    zotero_db_exists, DatabaseDiagnosis, DbError as DbErr, ItemInfo,
+    zotero_db_exists, DatabaseDiagnosis, DatabaseStructure, DbError as DbErr, ItemInfo,
 };
+use db::path::get_zotero_database_path;
 use error::{get_user_message, AppError};
 use pdf::commands::{
     delete_all_annotations, delete_annotation, get_annotation_file_path, get_annotation_stats,
@@ -99,6 +100,26 @@ fn get_db_diagnosis() -> Result<DatabaseDiagnosis, String> {
     get_database_diagnosis().map_err(|e| {
         eprintln!("[数据库] 获取诊断信息失败: {:?}", e);
         get_user_message(&AppError::QueryFailed).to_string()
+    })
+}
+
+/// Tauri 命令：探索数据库完整结构（用于生成文档）
+///
+/// # 返回值
+/// * `Result<DatabaseStructure, String>` - 完整的数据库结构信息
+#[tauri::command]
+fn explore_database_structure() -> Result<DatabaseStructure, String> {
+    eprintln!("[命令] explore_database_structure 被调用");
+    let db_path = get_zotero_database_path()
+        .ok_or_else(|| "无法检测到 Zotero 数据库路径".to_string())?;
+
+    let guard = db::connection::get_connection()
+        .map_err(|e| format!("获取数据库连接失败: {:?}", e))?;
+    let conn = guard.as_ref().ok_or_else(|| "数据库连接未初始化".to_string())?;
+
+    db::explore_database_structure(conn, &db_path).map_err(|e| {
+        eprintln!("[数据库] 探索数据库结构失败: {:?}", e);
+        format!("探索数据库结构失败: {}", e)
     })
 }
 
@@ -209,6 +230,7 @@ pub fn run() {
             get_item,
             check_db_status,
             get_db_diagnosis,
+            explore_database_structure,
             select_database_path,
             get_current_database_path,
             reset_db_connection,

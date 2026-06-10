@@ -3,8 +3,52 @@
 //! 本模块提供数据库表完整性检查功能，确保使用的数据库是有效的 Zotero 数据库。
 //! 验证标准 Zotero 表结构，防止因数据库不完整导致的查询失败。
 
-use rusqlite::Connection;
+use rusqlite::{Connection, Result as SqliteResult};
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+
+/// 表字段信息结构体
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ColumnInfo {
+    /// 列序号（从0开始）
+    pub cid: i32,
+    /// 列名
+    pub name: String,
+    /// 数据类型
+    pub column_type: String,
+    /// 是否可为空
+    pub notnull: bool,
+    /// 默认值
+    pub dflt_value: Option<String>,
+    /// 是否为主键
+    pub pk: bool,
+}
+
+/// 表结构信息结构体
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TableStructure {
+    /// 表名
+    pub name: String,
+    /// 字段列表
+    pub columns: Vec<ColumnInfo>,
+    /// 行数
+    pub row_count: i64,
+}
+
+/// 数据库完整结构探索结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DatabaseStructure {
+    /// 数据库路径
+    pub db_path: String,
+    /// 文件大小（字节）
+    pub file_size: u64,
+    /// 总表数
+    pub total_tables: usize,
+    /// 所有表名
+    pub all_tables: Vec<String>,
+    /// 表结构详情
+    pub table_structures: Vec<TableStructure>,
+}
 
 /// Zotero 数据库关键表（必须存在）
 const ZOTERO_REQUIRED_TABLES: &[&str] = &[
@@ -231,6 +275,87 @@ pub fn diagnose_database(conn: &Connection) -> DatabaseDiagnosis {
     }
 }
 
+/// 探索数据库完整结构（用于生成文档）
+///
+/// # 参数
+/// * `conn` - 数据库连接
+/// * `db_path` - 数据库文件路径
+///
+/// # 返回值
+/// * `Result<DatabaseStructure, DbValidationError>` - 完整的数据库结构信息
+pub fn explore_database_structure(
+    conn: &Connection,
+    db_path: &PathBuf,
+) -> Result<DatabaseStructure, DbValidationError> {
+    use std::fs;
+
+    // 获取文件大小
+    let file_size = fs::metadata(db_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+
+    // 获取所有表名
+    let all_tables = get_all_table_names(conn)?;
+
+    // 获取每个表的结构
+    let mut table_structures = Vec::new();
+    for table_name in &all_tables {
+        let columns = get_table_columns(conn, table_name)?;
+        let row_count = get_table_row_count(conn, table_name)?;
+        table_structures.push(TableStructure {
+            name: table_name.clone(),
+            columns,
+            row_count,
+        });
+    }
+
+    Ok(DatabaseStructure {
+        db_path: db_path.to_string_lossy().to_string(),
+        file_size,
+        total_tables: all_tables.len(),
+        all_tables,
+        table_structures,
+    })
+}
+
+/// 获取指定表的字段信息
+fn get_table_columns(conn: &Connection, table_name: &str) -> Result<Vec<ColumnInfo>, DbValidationError> {
+    let sql = format!("PRAGMA table_info({})", table_name);
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| DbValidationError::QueryFailed(e.to_string()))?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(ColumnInfo {
+                cid: row.get(0)?,
+                name: row.get(1)?,
+                column_type: row.get(2)?,
+                notnull: row.get::<_, i32>(3)? != 0,
+                dflt_value: row.get(4)?,
+                pk: row.get::<_, i32>(5)? != 0,
+            })
+        })
+        .map_err(|e| DbValidationError::QueryFailed(e.to_string()))?;
+
+    let mut columns = Vec::new();
+    for row_result in rows {
+        match row_result {
+            Ok(col) => columns.push(col),
+            Err(e) => eprintln!("[数据库验证] 读取表 {} 字段失败: {}", table_name, e),
+        }
+    }
+
+    Ok(columns)
+}
+
+/// 获取指定表的行数
+fn get_table_row_count(conn: &Connection, table_name: &str) -> Result<i64, DbValidationError> {
+    let sql = format!("SELECT COUNT(*) FROM {}", table_name);
+    conn.query_row(&sql, [], |row| row.get(0))
+        .map_err(|e| DbValidationError::QueryFailed(e.to_string()))
+}
+
 /// 数据库诊断结果结构体
 #[derive(Debug, serde::Serialize)]
 pub struct DatabaseDiagnosis {
@@ -260,5 +385,56 @@ mod tests {
         assert!(msg.contains("itemCreators"));
         assert!(msg.contains("creators"));
         assert!(msg.contains("items"));
+    }
+}
+
+/// 运行数据库结构探索测试（用于生成文档）
+/// 通过 cargo test -- --nocapture 运行
+#[test]
+fn test_explore_database_structure_output() {
+    use std::path::PathBuf;
+
+    // 设置数据库路径
+    let db_path = PathBuf::from(r"D:\Zotero\Date-Directary\zotero.sqlite");
+
+    if !db_path.exists() {
+        eprintln!("[测试] 数据库文件不存在: {:?}", db_path);
+        return;
+    }
+
+    eprintln!("[测试] 开始探索数据库结构...");
+
+    let conn = rusqlite::Connection::open(&db_path).expect("无法打开数据库");
+
+    let result = explore_database_structure(&conn, &db_path);
+    match result {
+        Ok(structure) => {
+            eprintln!("\n========================================");
+            eprintln!("数据库路径: {}", structure.db_path);
+            eprintln!("文件大小: {} bytes ({:.2} MB)", structure.file_size, structure.file_size as f64 / 1024.0 / 1024.0);
+            eprintln!("总表数: {}", structure.total_tables);
+            eprintln!("========================================\n");
+
+            for table in &structure.table_structures {
+                eprintln!("\n### {} 表 ({} 行)", table.name, table.row_count);
+                eprintln!("| 序号 | 字段名 | 类型 | 非空 | 默认值 | 主键 |");
+                eprintln!("| ---- | ------ | ---- | ---- | ------ | ---- |");
+                for col in &table.columns {
+                    let notnull_str = if col.notnull { "是" } else { "否" };
+                    let pk_str = if col.pk { "是" } else { "否" };
+                    let dflt = col.dflt_value.as_ref().map(|s| s.as_str()).unwrap_or("-");
+                    eprintln!("| {} | {} | {} | {} | {} | {} |", col.cid, col.name, col.column_type, notnull_str, dflt, pk_str);
+                }
+            }
+
+            eprintln!("\n========================================");
+            eprintln!("JSON 输出:");
+            eprintln!("========================================");
+            let json = serde_json::to_string_pretty(&structure).expect("序列化失败");
+            println!("{}", json);
+        }
+        Err(e) => {
+            eprintln!("[测试] 探索失败: {:?}", e);
+        }
     }
 }
