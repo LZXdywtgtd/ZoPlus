@@ -57,7 +57,7 @@ pub fn get_all_items() -> Result<Vec<ItemInfo>, DbError> {
                 FROM itemAuthors ia
                 JOIN creators c ON ia.authorID = c.creatorID
                 WHERE ia.itemID = i.itemID
-                ORDER BY ia.order
+                ORDER BY ia."order"
             ) as authors
         FROM items i
         WHERE i.itemID IS NOT NULL
@@ -105,7 +105,7 @@ pub fn get_item_by_id(item_id: i32) -> Result<Option<ItemInfo>, DbError> {
                 FROM itemAuthors ia
                 JOIN creators c ON ia.authorID = c.creatorID
                 WHERE ia.itemID = i.itemID
-                ORDER BY ia.order
+                ORDER BY ia."order"
             ) as authors
         FROM items i
         WHERE i.itemID = ?
@@ -151,7 +151,7 @@ pub fn get_items_paginated(offset: i32, limit: i32) -> Result<Vec<ItemInfo>, DbE
                 FROM itemAuthors ia
                 JOIN creators c ON ia.authorID = c.creatorID
                 WHERE ia.itemID = i.itemID
-                ORDER BY ia.order
+                ORDER BY ia."order"
             ) as authors
         FROM items i
         WHERE i.itemID IS NOT NULL
