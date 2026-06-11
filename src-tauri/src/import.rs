@@ -8,6 +8,7 @@
 //! - 自动复制文件到 Zotero 的 storage 目录
 //! - 自动生成元数据（标题、itemID、时间等）
 //! - 数据库操作使用事务
+//! - 完全动态数据库自省，无硬编码表名
 //!
 //! # Zotero 存储结构
 //! `storage/{随机8字符}/{itemKey}/{filename}.pdf`
@@ -19,6 +20,8 @@ use std::fs;
 use std::path::PathBuf;
 use tokio::time::{timeout, Duration};
 
+use crate::db::dynamic::find_zotero_table;
+use crate::db::metadata::DatabaseMetadata;
 use crate::db::path::get_zotero_database_path;
 
 /// 导入结果结构体
@@ -143,35 +146,38 @@ fn get_zotero_storage_path() -> Result<PathBuf, ImportError> {
     Ok(storage_path)
 }
 
-/// 检测字段ID（动态查询，避免硬编码）
-fn get_field_id(conn: &Connection, field_name: &str) -> Result<i32, ImportError> {
+/// 检测字段ID（动态查询，基于实际表结构）
+fn get_field_id(conn: &Connection, metadata: &DatabaseMetadata, field_name: &str) -> Result<i32, ImportError> {
+    // 动态查找 fields 表
+    let fields_table = find_zotero_table(metadata, "fields")
+        .ok_or_else(|| ImportError::DbOperationFailed("未找到 fields 表".to_string()))?;
+
+    let sql = format!("SELECT fieldID FROM {} WHERE fieldName = ?", fields_table);
     let field_id: i32 = conn
-        .query_row(
-            "SELECT fieldID FROM fields WHERE fieldName = ?",
-            [field_name],
-            |row| row.get(0),
-        )
+        .query_row(&sql, [field_name], |row| row.get(0))
         .map_err(|e| {
             ImportError::DbOperationFailed(format!("查询字段 '{}' 失败: {}", field_name, e))
         })?;
     Ok(field_id)
 }
 
-/// 在事务中插入 itemDataValue 并返回 valueID
+/// 在事务中插入 itemDataValue 并返回 valueID（使用动态 SQL）
 ///
 /// 先查询是否已存在相同的值，如果存在则返回已存在的 valueID
 /// 如果不存在则插入新值并返回新生成的 valueID
 fn insert_item_data_value(
     tx: &Transaction,
+    metadata: &DatabaseMetadata,
     value: &str,
 ) -> Result<i32, ImportError> {
+    // 动态获取表名（使用第一个候选表名作为 hint）
+    let values_table = find_zotero_table(metadata, "itemDataValues")
+        .ok_or_else(|| ImportError::DbOperationFailed("未找到 itemDataValues 表".to_string()))?;
+
     // 先查询是否已存在相同的值（通过事务查询）
+    let sql = format!("SELECT valueID FROM {} WHERE value = ?", values_table);
     let existing_id: Option<i32> = tx
-        .query_row(
-            "SELECT valueID FROM itemDataValues WHERE value = ?",
-            [value],
-            |row| row.get(0),
-        )
+        .query_row(&sql, [value], |row| row.get(0))
         .ok();
 
     if let Some(value_id) = existing_id {
@@ -179,10 +185,10 @@ fn insert_item_data_value(
     }
 
     // 插入新值
-    tx.execute("INSERT INTO itemDataValues (value) VALUES (?)", [value])
-        .map_err(|e| {
-            ImportError::DbOperationFailed(format!("插入 itemDataValues 失败: {}", e))
-        })?;
+    let insert_sql = format!("INSERT INTO {} (value) VALUES (?)", values_table);
+    tx.execute(&insert_sql, [value]).map_err(|e| {
+        ImportError::DbOperationFailed(format!("插入 {} 失败: {}", values_table, e))
+    })?;
 
     // 获取刚插入的 valueID（通过事务查询）
     let value_id = tx
@@ -194,7 +200,7 @@ fn insert_item_data_value(
     Ok(value_id)
 }
 
-/// 在事务中执行导入操作
+/// 在事务中执行导入操作（使用动态 SQL 构建器）
 fn import_file_internal(
     file_path: &str,
     max_file_size: u64,
@@ -217,13 +223,13 @@ fn import_file_internal(
     }
 
     //验证文件大小
-    let metadata = fs::metadata(&path).map_err(|e| {
+    let file_metadata = fs::metadata(&path).map_err(|e| {
         ImportError::FileNotFound(format!("无法读取文件元数据: {}", e))
     })?;
-    if metadata.len() > max_file_size {
+    if file_metadata.len() > max_file_size {
         return Err(ImportError::FileTooLarge(format!(
             "文件大小 {}超过限制 {}",
-            metadata.len(),
+            file_metadata.len(),
             max_file_size
         )));
     }
@@ -269,9 +275,22 @@ fn import_file_internal(
         ImportError::DbConnectionFailed(format!("打开数据库失败: {}", e))
     })?;
 
+    // 扫描数据库元数据（动态自省）
+    let metadata = DatabaseMetadata::scan_database(&conn).map_err(|e| {
+        ImportError::DbOperationFailed(format!("扫描数据库元数据失败: {}", e))
+    })?;
+
+    eprintln!("[导入] 数据库元数据扫描完成，表数量: {}", metadata.table_count());
+
+    // 动态获取表名
+    let items_table = find_zotero_table(&metadata, "items")
+        .ok_or_else(|| ImportError::DbOperationFailed("未找到 items 表".to_string()))?;
+    let item_data_table = find_zotero_table(&metadata, "itemData")
+        .ok_or_else(|| ImportError::DbOperationFailed("未找到 itemData 表".to_string()))?;
+
     // 在事务开始前获取所有需要的 field ID
-    let title_field_id = get_field_id(&conn, "title")?;
-    let date_field_id = get_field_id(&conn, "dateAdded").ok();
+    let title_field_id = get_field_id(&conn, &metadata, "title")?;
+    let date_field_id = get_field_id(&conn, &metadata, "dateAdded").ok();
 
     eprintln!("[导入] 字段 ID 获取完成: title_field_id={}, date_field_id={:?}", title_field_id, date_field_id);
 
@@ -280,11 +299,10 @@ fn import_file_internal(
         ImportError::TransactionFailed(format!("开始事务失败: {}", e))
     })?;
 
-    // 获取当前最大 itemID
+    // 获取当前最大 itemID（动态 SQL）
+    let max_item_id_sql = format!("SELECT COALESCE(MAX(itemID), 0) FROM {}", items_table);
     let max_item_id: i32 = tx
-        .query_row("SELECT COALESCE(MAX(itemID), 0) FROM items", [], |row| {
-            row.get(0)
-        })
+        .query_row(&max_item_id_sql, [], |row| row.get(0))
         .map_err(|e| {
             ImportError::DbOperationFailed(format!("获取最大 itemID 失败: {}", e))
         })?;
@@ -295,48 +313,47 @@ fn import_file_internal(
     // 从文件名提取标题
     let title = extract_title_from_filename(file_path);
 
-    // 插入 items 表
-    tx.execute(
-        "INSERT INTO items (itemID, itemKey, libraryID, keyByUser, itemTypeID, note, sig, clientDate, serverDate, synced, changed)
+    // 插入 items 表（动态 SQL）
+    let items_insert_sql = format!(
+        "INSERT INTO {} (itemID, itemKey, libraryID, keyByUser, itemTypeID, note, sig, clientDate, serverDate, synced, changed)
          VALUES (?, ?, 0, 0, 1, '', '', datetime('now'), datetime('now'), 0, datetime('now'))",
-        params![new_item_id, item_key],
-    )
-    .map_err(|e| {
-        ImportError::DbOperationFailed(format!("插入 items 表失败: {}", e))
-    })?;
+        items_table
+    );
+    tx.execute(&items_insert_sql, params![new_item_id, item_key])
+        .map_err(|e| {
+            ImportError::DbOperationFailed(format!("插入 {} 表失败: {}", items_table, e))
+        })?;
 
-    eprintln!("[导入] 已插入 items 表: itemID={}, itemKey={}", new_item_id, item_key);
+    eprintln!("[导入] 已插入 {} 表: itemID={}, itemKey={}", items_table, new_item_id, item_key);
 
-    // 插入标题到 itemDataValues（通过事务）
-    let title_value_id = insert_item_data_value(&tx, &title)?;
+    // 插入标题到 itemDataValues（通过事务，动态表名）
+    let title_value_id = insert_item_data_value(&tx, &metadata, &title)?;
 
-    // 插入 itemData 记录（标题）
-    tx.execute(
-        "INSERT INTO itemData (itemID, fieldID, valueID) VALUES (?, ?, ?)",
-        params![new_item_id, title_field_id, title_value_id],
-    )
-    .map_err(|e| {
-        ImportError::DbOperationFailed(format!("插入 itemData（标题）失败: {}", e))
-    })?;
+    // 插入 itemData 记录（标题，动态表名）
+    let item_data_insert_sql = format!(
+        "INSERT INTO {} (itemID, fieldID, valueID) VALUES (?, ?, ?)",
+        item_data_table
+    );
+    tx.execute(&item_data_insert_sql, params![new_item_id, title_field_id, title_value_id])
+        .map_err(|e| {
+            ImportError::DbOperationFailed(format!("插入 {}（标题）失败: {}", item_data_table, e))
+        })?;
 
     eprintln!(
-        "[导入] 已插入 itemData（标题）: fieldID={}, valueID={}",
-        title_field_id, title_value_id
+        "[导入] 已插入 {}（标题）: fieldID={}, valueID={}",
+        item_data_table, title_field_id, title_value_id
     );
 
     // 如果 dateAdded 字段存在，插入日期数据
     if let Some(date_fid) = date_field_id {
-        let date_value_id = insert_item_data_value(&tx, "")?;
-        tx.execute(
-            "INSERT INTO itemData (itemID, fieldID, valueID) VALUES (?, ?, ?)",
-            params![new_item_id, date_fid, date_value_id],
-        )
-        .map_err(|e| {
-            ImportError::DbOperationFailed(format!("插入 itemData（日期）失败: {}", e))
-        })?;
+        let date_value_id = insert_item_data_value(&tx, &metadata, "")?;
+        tx.execute(&item_data_insert_sql, params![new_item_id, date_fid, date_value_id])
+            .map_err(|e| {
+                ImportError::DbOperationFailed(format!("插入 {}（日期）失败: {}", item_data_table, e))
+            })?;
         eprintln!(
-            "[导入] 已插入 itemData（日期）: fieldID={}, valueID={}",
-            date_fid, date_value_id
+            "[导入] 已插入 {}（日期）: fieldID={}, valueID={}",
+            item_data_table, date_fid, date_value_id
         );
     }
 
