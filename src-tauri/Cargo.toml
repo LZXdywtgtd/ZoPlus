@@ -32,7 +32,7 @@ dirs = "5"
 # 错误处理
 thiserror = "2"
 # HTTP 客户端
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
 # 字节处理
 bytes = "1"
 # 异步流处理
@@ -41,6 +41,10 @@ futures-util = "0.3"
 regex = "1"
 # 随机数生成
 rand = "0.8"
+# 惰性求值静态变量
+lazy_static = "1.4"
+# chrono 时间处理
+chrono = { version = "0.4", features = ["serde"] }
 
 [dev-dependencies]
 tempfile = "3"

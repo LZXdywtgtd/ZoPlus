@@ -45,6 +45,10 @@ use ai::citation_graph_commands::{
 };
 use ai::commands::answer_paper_question;
 use import::{import_file_async, ImportResult};
+use sync::commands::{
+    configure_sync, get_sync_config, get_sync_status, start_background_sync, stop_background_sync,
+    sync_now,
+};
 use std::path::PathBuf;
 
 // 数据库访问模块
@@ -395,6 +399,13 @@ pub fn run() {
             get_paper_citations,
             // 单篇文献问答命令
             answer_paper_question,
+            // 云同步命令
+            sync_now,
+            get_sync_status,
+            configure_sync,
+            get_sync_config,
+            start_background_sync,
+            stop_background_sync,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
