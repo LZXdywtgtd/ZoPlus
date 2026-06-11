@@ -2,7 +2,6 @@
 //!
 //! 支持 Doubao Pro 和 Doubao Lite 模型
 
-use bytes::Bytes;
 use futures_util::StreamExt;
 use crate::ai::client::HTTPClientFactory;
 use crate::ai::{AIProvider, AIProviderType, ModelInfo, ModelPrice, Stream, AIError};

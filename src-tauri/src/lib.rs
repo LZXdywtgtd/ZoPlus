@@ -262,6 +262,7 @@ async fn delete_items(item_ids: Vec<i32>) -> Result<DeleteResult, String> {
 }
 
 /// 将 DbError 转换为用户友好的错误消息
+#[allow(dead_code)]
 fn db_error_to_user_message(err: &DbErr) -> String {
     match err {
         DbErr::ValidationFailed(msg) => {

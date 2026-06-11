@@ -11,7 +11,6 @@
 //! - Numero（数字编号格式）
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// 参考文献格式枚举
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -548,7 +547,7 @@ impl CitationFormatter {
     }
 
     /// MLA 9th 格式
-    fn format_mla9(&self, meta: &CitationMetadata, warnings: &mut Vec<String>) -> String {
+    fn format_mla9(&self, meta: &CitationMetadata, _warnings: &mut Vec<String>) -> String {
         let mut result = String::new();
 
         // 作者
@@ -644,7 +643,7 @@ impl CitationFormatter {
     }
 
     /// Chicago 17th 格式
-    fn format_chicago17(&self, meta: &CitationMetadata, warnings: &mut Vec<String>) -> String {
+    fn format_chicago17(&self, meta: &CitationMetadata, _warnings: &mut Vec<String>) -> String {
         let mut result = String::new();
 
         // 作者
@@ -678,7 +677,7 @@ impl CitationFormatter {
                 }
                 if let Some(ref issue) = meta.issue {
                     result.push_str(", no. ");
-                    result.push_str(&meta.issue.as_ref().unwrap_or(&String::new())[..]);
+                    result.push_str(issue);
                 }
                 if let Some(ref year) = meta.year {
                     result.push_str(" (");
@@ -727,7 +726,7 @@ impl CitationFormatter {
     }
 
     /// GB/T 7714-2015 格式（中国国家标准）
-    fn format_gb7714(&self, meta: &CitationMetadata, warnings: &mut Vec<String>) -> String {
+    fn format_gb7714(&self, meta: &CitationMetadata, _warnings: &mut Vec<String>) -> String {
         let mut result = String::new();
 
         // 作者（中文格式：姓，名）
@@ -821,7 +820,7 @@ impl CitationFormatter {
     }
 
     /// Harvard 格式
-    fn format_harvard(&self, meta: &CitationMetadata, warnings: &mut Vec<String>) -> String {
+    fn format_harvard(&self, meta: &CitationMetadata, _warnings: &mut Vec<String>) -> String {
         let mut result = String::new();
 
         // 作者
@@ -900,7 +899,7 @@ impl CitationFormatter {
     }
 
     /// IEEE 格式
-    fn format_ieee(&self, meta: &CitationMetadata, warnings: &mut Vec<String>) -> String {
+    fn format_ieee(&self, meta: &CitationMetadata, _warnings: &mut Vec<String>) -> String {
         let mut result = String::new();
 
         // 作者
@@ -987,7 +986,7 @@ impl CitationFormatter {
     }
 
     /// Vancouver 格式
-    fn format_vancouver(&self, meta: &CitationMetadata, warnings: &mut Vec<String>) -> String {
+    fn format_vancouver(&self, meta: &CitationMetadata, _warnings: &mut Vec<String>) -> String {
         let mut result = String::new();
 
         // 作者（只使用姓）
@@ -1055,7 +1054,7 @@ impl CitationFormatter {
     }
 
     /// Numero 数字编号格式
-    fn format_numero(&self, meta: &CitationMetadata, warnings: &mut Vec<String>) -> String {
+    fn format_numero(&self, meta: &CitationMetadata, _warnings: &mut Vec<String>) -> String {
         let mut result = String::new();
 
         // 作者
@@ -1505,7 +1504,7 @@ fn extract_url(text: &str) -> Option<String> {
 }
 
 /// 提取标题
-fn extract_title(text: &str, authors: &[Author], year: &Option<String>) -> String {
+fn extract_title(text: &str, _authors: &[Author], year: &Option<String>) -> String {
     // 简化实现：尝试找到被引号或特殊格式包裹的标题
     let text = text.trim();
 

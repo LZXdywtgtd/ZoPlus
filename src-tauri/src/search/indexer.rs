@@ -217,7 +217,7 @@ impl SearchIndexer {
     }
 
     /// 获取索引写入器
-    fn get_writer(&self) -> Result<std::sync::MutexGuard<IndexWriter>, IndexerError> {
+    fn get_writer(&self) -> Result<std::sync::MutexGuard<'_, IndexWriter>, IndexerError> {
         let writer = self
             .writer
             .as_ref()

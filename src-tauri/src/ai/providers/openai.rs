@@ -2,7 +2,6 @@
 //!
 //! 支持 GPT 系列模型
 
-use bytes::Bytes;
 use futures_util::StreamExt;
 use crate::ai::client::HTTPClientFactory;
 use crate::ai::{
@@ -31,6 +30,7 @@ impl OpenAIProvider {
         })
     }
 
+    #[allow(dead_code)]
     fn get_models_url(&self) -> String {
         format!("{}/v1/models", self.base_url)
     }

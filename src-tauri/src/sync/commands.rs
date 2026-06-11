@@ -8,7 +8,7 @@ use crate::sync::scheduler::SyncScheduler;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-/// 全局同步调度器实例
+// 全局同步调度器实例
 lazy_static::lazy_static! {
     static ref SYNC_SCHEDULER: Arc<RwLock<SyncScheduler>> = {
         let config = SyncConfig::default();

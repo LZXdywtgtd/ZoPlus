@@ -2,7 +2,6 @@
 //!
 //! 支持 Claude 系列模型
 
-use bytes::Bytes;
 use futures_util::StreamExt;
 use crate::ai::client::HTTPClientFactory;
 use crate::ai::{

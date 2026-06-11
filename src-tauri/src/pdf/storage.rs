@@ -186,7 +186,7 @@ impl AnnotationStorage {
         file_name: &str,
         annotation: Annotation,
     ) -> Result<(), StorageError> {
-        let mut annotations = match self.load(pdf_key)? {
+        let annotations = match self.load(pdf_key)? {
             Some(mut existing) => {
                 existing.add_annotation(annotation);
                 existing

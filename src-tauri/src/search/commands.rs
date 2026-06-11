@@ -56,12 +56,12 @@ impl SearchState {
     /// 获取索引构建器
     pub fn get_indexer(
         &self,
-    ) -> Result<std::sync::MutexGuard<Option<Arc<SearchIndexer>>>, IndexerError> {
+    ) -> Result<std::sync::MutexGuard<'_, Option<Arc<SearchIndexer>>>, IndexerError> {
         Ok(self.indexer.lock().unwrap())
     }
 
     /// 获取搜索引擎
-    pub fn get_engine(&self) -> Result<std::sync::MutexGuard<Option<SearchEngine>>, IndexerError> {
+    pub fn get_engine(&self) -> Result<std::sync::MutexGuard<'_, Option<SearchEngine>>, IndexerError> {
         Ok(self.engine.lock().unwrap())
     }
 }

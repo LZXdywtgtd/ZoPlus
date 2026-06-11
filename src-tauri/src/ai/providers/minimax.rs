@@ -2,7 +2,6 @@
 //!
 //! 支持 MiniMax-M3、M2 系列模型
 
-use bytes::Bytes;
 use futures_util::StreamExt;
 use crate::ai::client::HTTPClientFactory;
 use crate::ai::{AIProvider, AIProviderType, ModelInfo, ModelPrice, Stream, AIError};

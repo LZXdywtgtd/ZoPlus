@@ -327,7 +327,7 @@ pub struct AnnotationStats {
 
 // ============== PDF 文本提取命令 ==============
 
-use crate::pdf::text_extract::{extract_text_from_pdf, extract_text_from_pdf_range, PdfTextError};
+use crate::pdf::text_extract::{extract_text_from_pdf, extract_text_from_pdf_range};
 
 /// Tauri 命令：提取 PDF 全文文本
 ///

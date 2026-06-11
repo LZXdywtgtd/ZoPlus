@@ -3,7 +3,7 @@
 //! 本模块提供数据库表完整性检查功能，确保使用的数据库是有效的 Zotero 数据库。
 //! 验证标准 Zotero 表结构，防止因数据库不完整导致的查询失败。
 
-use rusqlite::{Connection, Result as SqliteResult};
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 

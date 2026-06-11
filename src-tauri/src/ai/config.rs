@@ -4,9 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 use std::sync::RwLock;
-use tauri::AppHandle;
 
-use super::{AIProviderType, ModelInfo};
+use super::AIProviderType;
 
 /// AI 全局配置
 #[derive(Debug, Clone, Serialize, Deserialize)]

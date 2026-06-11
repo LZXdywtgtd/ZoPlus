@@ -123,6 +123,7 @@ impl ComparisonGenerator {
     }
 
     /// 检查是否已取消
+    #[allow(dead_code)]
     fn is_cancelled(&self) -> bool {
         self.cancel_flag.load(Ordering::SeqCst)
     }

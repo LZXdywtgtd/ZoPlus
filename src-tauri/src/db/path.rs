@@ -130,26 +130,21 @@ fn get_default_zotero_path() -> PathBuf {
 /// # 返回值
 /// * `Option<PathBuf>` - 找到则返回路径，否则返回 None
 fn scan_for_zotero_db() -> Option<PathBuf> {
-    #[cfg(target_os = "windows")]
-    {
-        return scan_windows_for_zotero_db();
+    cfg_if::cfg_if! {
+        if #[cfg(target_os = "windows")] {
+            scan_windows_for_zotero_db()
+        } else if #[cfg(target_os = "macos")] {
+            scan_macos_for_zotero_db()
+        } else if #[cfg(target_os = "linux")] {
+            scan_linux_for_zotero_db()
+        } else {
+            // 未知系统，扫描用户主目录
+            // 注意：scan_directory_for_zotero_db 返回 (PathBuf, SystemTime)，只取 PathBuf
+            env::home_dir()
+                .and_then(|home| scan_directory_for_zotero_db(&home, 0))
+                .map(|(path, _)| path)
+        }
     }
-
-    #[cfg(target_os = "macos")]
-    {
-        return scan_macos_for_zotero_db();
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        return scan_linux_for_zotero_db();
-    }
-
-    // 未知系统，扫描用户主目录
-    // 注意：scan_directory_for_zotero_db 返回 (PathBuf, SystemTime)，只取 PathBuf
-    env::home_dir()
-        .and_then(|home| scan_directory_for_zotero_db(&home, 0))
-        .map(|(path, _)| path)
 }
 
 /// Windows 平台：扫描所有盘符查找 Zotero 数据库
@@ -253,6 +248,7 @@ fn scan_linux_for_zotero_db() -> Option<PathBuf> {
 }
 
 /// 公共目录扫描逻辑：收集多个路径下的候选数据库
+#[allow(dead_code)]
 fn scan_common_locations(search_paths: Vec<PathBuf>) -> Option<PathBuf> {
     let candidates: Vec<(PathBuf, SystemTime)> = search_paths
         .iter()
