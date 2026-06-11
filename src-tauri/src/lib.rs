@@ -44,7 +44,7 @@ use ai::citation_graph_commands::{
     get_citation_graph, get_key_papers, get_paper_citations,
 };
 use ai::commands::answer_paper_question;
-use import::{import_file_async, ImportResult};
+use import::{import_file_async, import_folder_async, FolderImportResult, ImportResult};
 use sync::commands::{
     configure_sync, get_sync_config, get_sync_status, start_background_sync, stop_background_sync,
     sync_now,
@@ -222,6 +222,19 @@ async fn import_file(
     import_file_async(file_path, max_file_size).await
 }
 
+/// Tauri 命令：导入文件夹中的所有 PDF 文件
+///
+/// # 参数
+/// * `folder_path` - 文件夹的完整路径
+///
+/// # 返回值
+/// * `Result<FolderImportResult, String>` - 导入结果或错误信息
+#[tauri::command]
+async fn import_folder(folder_path: String) -> Result<FolderImportResult, String> {
+    eprintln!("[命令] import_folder 被调用: folder_path={}", folder_path);
+    import_folder_async(folder_path).await
+}
+
 /// Tauri 命令：删除单条文献
 ///
 /// # 参数
@@ -340,6 +353,7 @@ pub fn run() {
             extract_pdf_text_range,
             // 文件导入命令
             import_file,
+            import_folder,
             // 文献删除命令
             delete_item,
             delete_items,

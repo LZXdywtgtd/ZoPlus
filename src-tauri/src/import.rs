@@ -400,6 +400,104 @@ pub fn import_file_sync(file_path: &str, max_file_size: Option<u64>) -> Result<I
     import_file_internal(file_path, max_size).map_err(|e| e.to_string())
 }
 
+/// 文件夹导入结果结构体
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FolderImportResult {
+    /// 成功导入的文件数
+    pub success: i32,
+    /// 导入失败的文件数
+    pub failed: i32,
+    /// 错误信息列表
+    pub errors: Vec<String>,
+}
+
+/// 导入单个文件（内部使用，不做路径验证）
+async fn import_single_file(path: &PathBuf) -> Result<(), String> {
+    import_file_async(path.to_string_lossy().to_string(), None).await?;
+    Ok(())
+}
+
+/// 递归扫描文件夹中的所有 PDF 文件
+fn scan_folder_for_pdfs(folder_path: &PathBuf) -> Result<Vec<PathBuf>, String> {
+    let mut pdf_files = Vec::new();
+    let mut stack = vec![folder_path.clone()];
+
+    while let Some(dir) = stack.pop() {
+        let entries = fs::read_dir(&dir)
+            .map_err(|e| format!("无法读取目录: {}", e))?;
+
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("读取失败: {}", e))?;
+            let path = entry.path();
+
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.is_file() {
+                if let Some(ext) = path.extension() {
+                    if ext.eq_ignore_ascii_case("pdf") {
+                        pdf_files.push(path);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(pdf_files)
+}
+
+/// 导入文件夹（异步）
+///
+/// 递归扫描文件夹中的所有 PDF 文件并导入
+///
+/// # 参数
+/// * `folder_path` - 文件夹的完整路径
+///
+/// # 返回值
+/// * `Result<FolderImportResult, String>` - 导入结果或错误信息
+pub async fn import_folder_async(folder_path: String) -> Result<FolderImportResult, String> {
+    eprintln!("[导入] 开始导入文件夹: {}", folder_path);
+
+    let folder = PathBuf::from(&folder_path);
+
+    // 验证文件夹存在
+    if !folder.exists() || !folder.is_dir() {
+        return Err(format!("文件夹不存在: {}", folder_path));
+    }
+
+    // 扫描所有 PDF 文件
+    let pdf_files = scan_folder_for_pdfs(&folder)?;
+    eprintln!("[导入] 扫描到 {} 个 PDF 文件", pdf_files.len());
+
+    let mut result = FolderImportResult {
+        success: 0,
+        failed: 0,
+        errors: Vec::new(),
+    };
+
+    // 逐个导入文件
+    for path in pdf_files {
+        match import_single_file(&path).await {
+            Ok(_) => {
+                result.success += 1;
+                eprintln!("[导入] 成功导入: {}", path.display());
+            }
+            Err(e) => {
+                result.failed += 1;
+                let error_msg = format!("{}: {}", path.display(), e);
+                result.errors.push(error_msg.clone());
+                eprintln!("[导入] 导入失败: {}", error_msg);
+            }
+        }
+    }
+
+    eprintln!(
+        "[导入] 文件夹导入完成: 成功={}, 失败={}",
+        result.success, result.failed
+    );
+
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

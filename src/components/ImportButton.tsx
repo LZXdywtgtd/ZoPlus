@@ -5,6 +5,8 @@
 import { useState } from 'react';
 import { Button, Modal, Space, message } from 'antd';
 import { ImportOutlined, CloudUploadOutlined } from '@ant-design/icons';
+import { open } from '@tauri-apps/plugin-dialog';
+import { invoke } from '@tauri-apps/api/core';
 import DropZone from './DropZone';
 
 /// 导入按钮组件属性
@@ -30,6 +32,53 @@ function ImportButton({ onImportSuccess }: ImportButtonProps) {
   /** 关闭导入对话框 */
   const handleCloseImport = () => {
     setModalVisible(false);
+  };
+
+  /** 选择文件导入 */
+  const handleSelectFiles = async () => {
+    try {
+      const paths = await open({
+        multiple: true,
+        filters: [{
+          name: '文档文件',
+          extensions: ['pdf', 'docx', 'pptx', 'epub', 'txt']
+        }]
+      });
+
+      if (paths && Array.isArray(paths)) {
+        for (const path of paths) {
+          try {
+            await invoke('import_file', { filePath: path });
+            message.success('导入成功');
+          } catch (err) {
+            message.error('导入失败: ' + err);
+          }
+        }
+        onImportSuccess?.();
+      }
+    } catch (err) {
+      console.error('[ImportButton] 选择文件失败:', err);
+      message.error('选择文件失败');
+    }
+  };
+
+  /** 选择文件夹导入 */
+  const handleSelectFolder = async () => {
+    try {
+      const path = await open({ directory: true });
+      if (path && typeof path === 'string') {
+        try {
+          await invoke('import_folder', { folderPath: path });
+          message.success('文件夹导入完成');
+          onImportSuccess?.();
+        } catch (err) {
+          message.error('导入失败: ' + err);
+        }
+      }
+    } catch (err) {
+      console.error('[ImportButton] 选择文件夹失败:', err);
+      message.error('选择文件夹失败');
+    }
   };
 
   /** 导入成功处理 */
@@ -66,6 +115,12 @@ function ImportButton({ onImportSuccess }: ImportButtonProps) {
         <Space direction="vertical" style={{ width: '100%' }} size="large">
           {/* 拖拽上传区域 */}
           <DropZone onImportSuccess={handleImportSuccess} />
+
+          {/* 按钮区域 */}
+          <Space style={{ width: '100%', justifyContent: 'center' }}>
+            <Button onClick={handleSelectFiles}>选择文件</Button>
+            <Button onClick={handleSelectFolder}>选择文件夹</Button>
+          </Space>
 
           {/* 提示信息 */}
           <Space direction="vertical" style={{ width: '100%' }}>
