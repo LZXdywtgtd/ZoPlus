@@ -19,16 +19,25 @@ import Search from '../pages/Search';
 import CitationFormatter from '../pages/CitationFormatter';
 import AIChat from '../pages/AIChat';
 import ArticleComparison from '../pages/ArticleComparison';
+import Settings from '../pages/Settings';
+import ThemeSwitch from '../components/ThemeSwitch';
 import useAppStore from '../store/appStore';
 
 const { Sider, Content } = Layout;
 const { Title, Text } = Typography;
 
-/// 菜单项类型
+const { Header } = Layout;
+
+///菜单项类型
 type MenuItemKey = 'items' | 'search' | 'sync' | 'settings' | 'citation' | 'aichat' | 'comparison';
 
+interface DashboardProps {
+  isDark: boolean;
+  onToggleTheme: () => void;
+}
+
 /// 主界面布局页面组件
-function Dashboard() {
+function Dashboard({ isDark, onToggleTheme }: DashboardProps) {
   // 当前选中的菜单项
   const [selectedKey, setSelectedKey] = useState<MenuItemKey>('items');
   // 批量对比选中的文献ID
@@ -75,13 +84,8 @@ function Dashboard() {
           </Space>
         );
       case 'settings':
-        // 设置页面（预留）
-        return (
-          <Space direction="vertical" style={{ width: '100%' }} size="large">
-            <Title level={4}>设置</Title>
-            <Text type="secondary">设置功能开发中...</Text>
-          </Space>
-        );
+        // 设置页面
+        return <Settings />;
       case 'citation':
         // 参考文献格式化页面
         return <CitationFormatter />;
@@ -165,10 +169,24 @@ function Dashboard() {
 
       {/* 右侧内容区域 */}
       <Layout>
+        {/* 顶部工具栏 -包含主题切换 */}
+        <Header
+          style={{
+            padding: '0 24px',
+            background: isDark ? '#141414' : '#fff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            borderBottom: '1px solid #f0f0f0',
+          }}
+        >
+          <ThemeSwitch isDark={isDark} onToggle={onToggleTheme} />
+        </Header>
+
         <Content
           style={{
             padding: 24,
-            background: '#fff',
+            background: isDark ? '#000000' : '#fff',
             overflow: 'auto',
           }}
         >

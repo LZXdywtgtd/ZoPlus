@@ -2,11 +2,13 @@
 //!
 //! 提供 AI 厂商配置、模型选择、API Key 管理功能
 //! 提供云同步配置功能
+//! 提供通用设置（主题、语言等）
 
 import React, { useState, useEffect } from 'react';
 import { Card, Form, Select, Input, Button, Switch, Space, message, Alert, Divider } from 'antd';
-import { KeyOutlined, ApiOutlined, ExperimentOutlined, SaveOutlined, CloudOutlined, SyncOutlined } from '@ant-design/icons';
+import { KeyOutlined, ApiOutlined, ExperimentOutlined, SaveOutlined, CloudOutlined, SyncOutlined, SettingOutlined, GlobalOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { invoke } from '@tauri-apps/api/core';
+import ThemeSwitch from '../components/ThemeSwitch';
 
 // AI 厂商类型
 type AIProviderType = 'openai' | 'anthropic' | 'deepseek' | 'doubao' | 'qwen' | 'glm' | 'minimax' | 'mimo';
@@ -29,6 +31,9 @@ interface AIConfig {
   base_url?: string;
 }
 
+// 主题存储键名
+const THEME_STORAGE_KEY = 'zoplus-theme-is-dark';
+
 // 厂商显示名称映射
 const providerDisplayNames: Record<AIProviderType, string> = {
   openai: 'OpenAI',
@@ -41,7 +46,12 @@ const providerDisplayNames: Record<AIProviderType, string> = {
   mimo: '小米MiMo',
 };
 
-const Settings: React.FC = () => {
+interface SettingsProps {
+  isDark?: boolean;
+  onToggleTheme?: () => void;
+}
+
+const Settings: React.FC<SettingsProps> = ({ isDark = false, onToggleTheme }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -61,11 +71,15 @@ const Settings: React.FC = () => {
   const [syncing, setSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<any>(null);
 
+  // 语言设置
+  const [language, setLanguage] = useState<string>('zh-CN');
+
   // 加载 AI 配置
   useEffect(() => {
     loadAIConfig();
     loadAllModels();
     loadSyncConfig();
+    loadLanguageSetting();
   }, []);
 
   // 根据选择的厂商过滤模型
@@ -76,6 +90,29 @@ const Settings: React.FC = () => {
       setSelectedModel(filtered[0].id);
     }
   }, [selectedProvider, models]);
+
+  // 加载语言设置
+  const loadLanguageSetting = () => {
+    try {
+      const storedLang = localStorage.getItem('zoplus-language');
+      if (storedLang) {
+        setLanguage(storedLang);
+      }
+    } catch (e) {
+      console.warn('无法读取语言设置:', e);
+    }
+  };
+
+  // 保存语言设置
+  const handleLanguageChange = (value: string) => {
+    setLanguage(value);
+    try {
+      localStorage.setItem('zoplus-language', value);
+      message.success('语言设置已保存');
+    } catch (e) {
+      console.warn('无法保存语言设置:', e);
+    }
+  };
 
   const loadAIConfig = async () => {
     try {
@@ -214,6 +251,42 @@ const Settings: React.FC = () => {
 
   return (
     <div style={{ padding: '24px', maxWidth: '800px', margin: '0 auto' }}>
+      {/* 通用设置 */}
+      <Card
+        title={
+          <Space>
+            <SettingOutlined />
+            通用设置
+          </Space>
+        }
+        style={{ marginBottom: '24px' }}
+      >
+        <Form layout="vertical">
+          <Divider orientation="left">界面设置</Divider>
+
+          <Form.Item label="主题">
+            <Space>
+              <ThemeSwitch isDark={isDark} onToggle={onToggleTheme || (() => {})} />
+              <span style={{ color: 'rgba(0, 0, 0, 0.65)' }}>
+                {isDark ? '当前：暗色主题' : '当前：亮色主题'}
+              </span>
+            </Space>
+          </Form.Item>
+
+          <Form.Item label="语言">
+            <Select
+              value={language}
+              onChange={handleLanguageChange}
+              style={{ width: 200 }}
+            >
+              <Select.Option value="zh-CN">简体中文</Select.Option>
+              <Select.Option value="en-US">English</Select.Option>
+            </Select>
+          </Form.Item>
+        </Form>
+      </Card>
+
+      {/* AI 设置 */}
       <Card
         title={
           <Space>
@@ -400,6 +473,29 @@ const Settings: React.FC = () => {
             </div>
           )}
         </Form>
+      </Card>
+
+      {/* 关于 */}
+      <Card
+        title={
+          <Space>
+            <InfoCircleOutlined />
+            关于
+          </Space>
+        }
+        style={{ marginTop: '24px' }}
+      >
+        <Space direction="vertical">
+          <div>
+            <strong>ZoPlus</strong> v0.1.0
+          </div>
+          <div type="secondary">
+            基于 Tauri + React + Rust 构建的论文管理软件
+          </div>
+          <div type="secondary">
+            集成 MiniMax AI 与阿里云云同步功能
+          </div>
+        </Space>
       </Card>
     </div>
   );
