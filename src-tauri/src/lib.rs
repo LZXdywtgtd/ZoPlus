@@ -3,9 +3,10 @@
 //! 基于 Tauri + Rust 重构 Zotero 前端，集成 MiniMax AI 与阿里云云同步。
 
 use db::{
-    get_all_items_async, get_current_db_path, get_database_diagnosis, get_item_by_id_async,
-    get_items_paginated_async as fetch_items_paginated_async, reset_connection, validate_sqlite_file,
-    zotero_db_exists, DatabaseDiagnosis, DatabaseStructure, DbError as DbErr, ItemInfo,
+    delete_item_async, delete_items_async, get_all_items_async, get_current_db_path, get_database_diagnosis,
+    get_item_by_id_async, get_items_paginated_async as fetch_items_paginated_async, reset_connection,
+    validate_sqlite_file, zotero_db_exists, DatabaseDiagnosis, DatabaseStructure, DbError as DbErr,
+    DeleteResult, ItemInfo,
 };
 use db::path::get_zotero_database_path;
 use error::{get_user_message, AppError};
@@ -213,6 +214,32 @@ async fn import_file(
     import_file_async(file_path, max_file_size).await
 }
 
+/// Tauri 命令：删除单条文献
+///
+/// # 参数
+/// * `item_id` - 要删除的文献ID
+///
+/// # 返回值
+/// * `Result<DeleteResult, String>` - 删除结果或错误信息
+#[tauri::command]
+async fn delete_item(item_id: i32) -> Result<DeleteResult, String> {
+    eprintln!("[命令] delete_item 被调用: item_id={}", item_id);
+    delete_item_async(item_id).await
+}
+
+/// Tauri 命令：批量删除文献
+///
+/// # 参数
+/// * `item_ids` - 要删除的文献ID列表
+///
+/// # 返回值
+/// * `Result<DeleteResult, String>` - 删除结果或错误信息
+#[tauri::command]
+async fn delete_items(item_ids: Vec<i32>) -> Result<DeleteResult, String> {
+    eprintln!("[命令] delete_items 被调用: count={}", item_ids.len());
+    delete_items_async(item_ids).await
+}
+
 /// 将 DbError 转换为用户友好的错误消息
 fn db_error_to_user_message(err: &DbErr) -> String {
     match err {
@@ -298,6 +325,9 @@ pub fn run() {
             get_annotation_stats,
             // 文件导入命令
             import_file,
+            // 文献删除命令
+            delete_item,
+            delete_items,
             // 全文搜索相关命令
             init_search_index,
             build_search_index,

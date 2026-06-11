@@ -110,6 +110,46 @@ export async function importFile(
   });
 }
 
+// ============== 文献删除相关 ==============
+
+/// 删除失败信息
+export interface DeleteFailure {
+  /// 文献ID
+  item_id: number;
+  /// 错误信息
+  error: string;
+}
+
+/// 删除结果结构
+export interface DeleteResult {
+  /// 删除成功的文献ID列表
+  deleted_ids: number[];
+  /// 删除失败的文献ID及错误信息
+  failed_ids: DeleteFailure[];
+  /// 删除的文件数量
+  files_deleted: number;
+  /// 操作状态消息
+  message: string;
+}
+
+/// 删除单条文献
+///
+/// @param itemId - 要删除的文献ID
+/// @returns Promise<DeleteResult> 删除结果
+/// @throws 删除失败时抛出异常
+export async function deleteItem(itemId: number): Promise<DeleteResult> {
+  return await invoke<DeleteResult>('delete_item', { item_id: itemId });
+}
+
+/// 批量删除文献
+///
+/// @param itemIds - 要删除的文献ID列表
+/// @returns Promise<DeleteResult> 删除结果
+/// @throws 删除失败时抛出异常
+export async function deleteItems(itemIds: number[]): Promise<DeleteResult> {
+  return await invoke<DeleteResult>('delete_items', { item_ids: itemIds });
+}
+
 // ============== PDF 标注相关 ==============
 
 /// 标注类型

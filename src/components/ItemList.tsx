@@ -2,12 +2,12 @@
 //!
 //! 以表格形式展示文献列表，支持加载状态和错误提示和批量选择
 
-import { useEffect, useRef } from 'react';
-import { Table, Alert, Space, Typography, Empty, Tag, Button, message } from 'antd';
-import { FileTextOutlined, LoadingOutlined, SwapOutlined } from '@ant-design/icons';
+import { useEffect, useRef, useState } from 'react';
+import { Table, Alert, Space, Typography, Empty, Tag, Button, message, Modal, Popconfirm } from 'antd';
+import { FileTextOutlined, LoadingOutlined, SwapOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import useAppStore from '../store/appStore';
-import { getItems } from '../utils/tauriCommands';
+import { getItems, deleteItem } from '../utils/tauriCommands';
 import type { ItemInfo } from '../store/appStore';
 import SummaryButton from './SummaryButton';
 import ImportButton from './ImportButton';
@@ -62,9 +62,18 @@ const columns: ColumnsType<ItemInfo> = [
   {
     title: '操作',
     key: 'action',
-    width: 100,
+    width: 150,
     render: (_: unknown, record: ItemInfo) => (
-      <SummaryButton itemId={record.item_id} showDropdown />
+      <Space>
+        <SummaryButton itemId={record.item_id} showDropdown />
+        <Button
+          type="text"
+          size="small"
+          danger
+          icon={<DeleteOutlined />}
+          onClick={() => handleDeleteClick(record.item_id, record.title)}
+        />
+      </Space>
     ),
   },
 ];
@@ -73,6 +82,50 @@ const columns: ColumnsType<ItemInfo> = [
 function ItemList() {
   // 从状态管理获取文献列表和相关状态
   const { items, itemsLoading, itemsError, dbStatus, selectedItemIds, setSelectedItemIds } = useAppStore();
+
+  // 删除确认弹窗状态
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [deletingItemId, setDeletingItemId] = useState<number | null>(null);
+  const [deletingTitle, setDeletingTitle] = useState<string>('');
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // 处理删除按钮点击
+  const handleDeleteClick = (itemId: number, title: string) => {
+    setDeletingItemId(itemId);
+    setDeletingTitle(title || '未知标题');
+    setDeleteModalVisible(true);
+  };
+
+  // 确认删除
+  const handleConfirmDelete = async () => {
+    if (deletingItemId === null) return;
+
+    setIsDeleting(true);
+    try {
+      const result = await deleteItem(deletingItemId);
+      if (result.failed_ids.length === 0) {
+        message.success(`已删除文献: ${result.message}`);
+        // 刷新列表
+        const data = await getItems();
+        useAppStore.getState().setItems(data);
+      } else {
+        message.error(`删除失败: ${result.failed_ids[0].error}`);
+      }
+    } catch (error) {
+      message.error(`删除失败: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsDeleting(false);
+      setDeleteModalVisible(false);
+      setDeletingItemId(null);
+    }
+  };
+
+  // 取消删除
+  const handleCancelDelete = () => {
+    setDeleteModalVisible(false);
+    setDeletingItemId(null);
+    setDeletingTitle('');
+  };
 
   // 处理批量选择变化
   const handleSelectionChange = (selectedRowKeys: React.Key[]) => {
@@ -235,6 +288,21 @@ function ItemList() {
           type: 'checkbox',
         }}
       />
+      {/* 删除确认弹窗 */}
+      <Modal
+        title="确认删除文献"
+        open={deleteModalVisible}
+        onOk={handleConfirmDelete}
+        onCancel={handleCancelDelete}
+        confirmLoading={isDeleting}
+        okText="确认删除"
+        cancelText="取消"
+        okButtonProps={{ danger: true }}
+      >
+        <p>确定要删除以下文献吗？此操作不可撤销。</p>
+        <p style={{ fontWeight: 'bold', marginTop: 8 }}>标题: {deletingTitle}</p>
+        <p style={{ color: '#ff4d4f', marginTop: 8 }}>注意: 删除文献将同时删除关联的附件文件。</p>
+      </Modal>
     </Space>
   );
 }

@@ -385,10 +385,10 @@ pub async fn import_file_async(
         Ok(Ok(inner_result)) => inner_result,
         Ok(Err(e)) => {
             eprintln!("[导入]导入失败: {}", e);
-            Err(e)
+            Err(e.to_string())
         }
-        Err(e) => {
-            eprintln!("[导入] 导入超时（{}秒）: {:?}", QUERY_TIMEOUT_SECS, e);
+        Err(_) => {
+            eprintln!("[导入] 导入超时（{}秒）", QUERY_TIMEOUT_SECS);
             Err(format!("导入超时（{}秒）", QUERY_TIMEOUT_SECS))
         }
     }
