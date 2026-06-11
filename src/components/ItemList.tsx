@@ -210,45 +210,45 @@ function ItemList() {
     );
   }
 
-  // 显示加载状态
-  if (itemsLoading) {
-    return (
-      <Space direction="vertical" style={{ width: '100%' }} size="large">
-        <Title level={5}>文献列表</Title>
+  // 简化：合并加载状态、错误状态、空数据的状态检查，使用单一状态判断
+  const renderContent = () => {
+    if (itemsLoading) {
+      return (
         <Alert
           message="正在加载文献列表..."
           type="info"
           showIcon
           icon={<LoadingOutlined spin />}
         />
-      </Space>
-    );
-  }
-
-  // 显示错误提示
-  if (itemsError) {
-    return (
-      <Space direction="vertical" style={{ width: '100%' }} size="large">
-        <Title level={5}>文献列表</Title>
+      );
+    }
+    if (itemsError) {
+      return (
         <Alert
           message="加载文献列表失败"
           description={itemsError}
           type="error"
           showIcon
         />
-      </Space>
-    );
-  }
-
-  // 空数据提示
-  if (items.length === 0) {
-    return (
-      <Space direction="vertical" style={{ width: '100%' }} size="large">
-        <Title level={5}>文献列表</Title>
+      );
+    }
+    if (items.length === 0) {
+      return (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description="暂无文献数据"
         />
+      );
+    }
+    return null;
+  };
+
+  const statusContent = renderContent();
+  if (statusContent) {
+    return (
+      <Space direction="vertical" style={{ width: '100%' }} size="large">
+        <Title level={5}>文献列表</Title>
+        {statusContent}
       </Space>
     );
   }

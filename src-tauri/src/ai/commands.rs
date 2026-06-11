@@ -123,39 +123,31 @@ pub fn get_all_ai_models() -> Vec<ModelInfo> {
     crate::ai::providers::get_all_models()
 }
 
+/// 创建指定厂商的 Provider 实例（用于获取模型列表）
+/// 简化：使用统一模式创建 provider，消除重复的 match 分支
+fn create_provider_for_models(provider: AIProviderType) -> Option<Arc<dyn AIProvider>> {
+    use crate::ai::providers;
+    use crate::ai::errors::AIError;
+    let dummy_key = "dummy".to_string();
+    let result: Result<Arc<dyn AIProvider>, AIError> = match provider {
+        AIProviderType::OpenAI => providers::openai::OpenAIProvider::new(dummy_key, None).map(|p| Arc::new(p) as Arc<dyn AIProvider>),
+        AIProviderType::Anthropic => providers::anthropic::AnthropicProvider::new(dummy_key, None).map(|p| Arc::new(p) as Arc<dyn AIProvider>),
+        AIProviderType::DeepSeek => providers::deepseek::DeepSeekProvider::new(dummy_key, None).map(|p| Arc::new(p) as Arc<dyn AIProvider>),
+        AIProviderType::Doubao => providers::doubao::DoubaoProvider::new(dummy_key, None).map(|p| Arc::new(p) as Arc<dyn AIProvider>),
+        AIProviderType::Qwen => providers::qwen::QwenProvider::new(dummy_key, None).map(|p| Arc::new(p) as Arc<dyn AIProvider>),
+        AIProviderType::Glm => providers::glm::GlmProvider::new(dummy_key, None).map(|p| Arc::new(p) as Arc<dyn AIProvider>),
+        AIProviderType::MiniMax => providers::minimax::MiniMaxProvider::new(dummy_key, None).map(|p| Arc::new(p) as Arc<dyn AIProvider>),
+        AIProviderType::MiMo => providers::mimo::MiMoProvider::new(dummy_key, None).map(|p| Arc::new(p) as Arc<dyn AIProvider>),
+    };
+    result.ok()
+}
+
 /// Tauri 命令：获取指定厂商的可用模型
 #[tauri::command]
 pub fn get_ai_models_by_provider(provider: AIProviderType) -> Vec<ModelInfo> {
-    use crate::ai::providers;
-    let dummy_key = "dummy".to_string();
-    let provider: Arc<dyn AIProvider> = match provider {
-        AIProviderType::OpenAI => {
-            Arc::new(providers::openai::OpenAIProvider::new(dummy_key.clone(), None).map_err(|e| e.to_string()).unwrap()) as Arc<dyn AIProvider>
-        }
-        AIProviderType::Anthropic => {
-            Arc::new(providers::anthropic::AnthropicProvider::new(dummy_key.clone(), None).map_err(|e| e.to_string()).unwrap()) as Arc<dyn AIProvider>
-        }
-        AIProviderType::DeepSeek => {
-            Arc::new(providers::deepseek::DeepSeekProvider::new(dummy_key.clone(), None).map_err(|e| e.to_string()).unwrap()) as Arc<dyn AIProvider>
-        }
-        AIProviderType::Doubao => {
-            Arc::new(providers::doubao::DoubaoProvider::new(dummy_key.clone(), None).map_err(|e| e.to_string()).unwrap()) as Arc<dyn AIProvider>
-        }
-        AIProviderType::Qwen => {
-            Arc::new(providers::qwen::QwenProvider::new(dummy_key.clone(), None).map_err(|e| e.to_string()).unwrap()) as Arc<dyn AIProvider>
-        }
-        AIProviderType::Glm => {
-            Arc::new(providers::glm::GlmProvider::new(dummy_key.clone(), None).map_err(|e| e.to_string()).unwrap()) as Arc<dyn AIProvider>
-        }
-        AIProviderType::MiniMax => {
-            Arc::new(providers::minimax::MiniMaxProvider::new(dummy_key.clone(), None).map_err(|e| e.to_string()).unwrap()) as Arc<dyn AIProvider>
-        }
-        AIProviderType::MiMo => {
-            Arc::new(providers::mimo::MiMoProvider::new(dummy_key.clone(), None).map_err(|e| e.to_string()).unwrap()) as Arc<dyn AIProvider>
-        }
-    };
-    // 返回模型列表
-    provider.get_available_models()
+    create_provider_for_models(provider)
+        .map(|p| p.get_available_models())
+        .unwrap_or_default()
 }
 
 /// Tauri 命令：获取模型价格

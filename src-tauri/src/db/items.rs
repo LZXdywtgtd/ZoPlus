@@ -55,16 +55,9 @@ fn detect_author_table_name(conn: &Connection) -> String {
     default
 }
 
-/// 获取带作者信息的 SQL 查询语句
-///
-/// # 参数
-/// * `author_table` - 作者关联表名
-///
-/// # 返回值
-/// * `String` - 完整的 SQL 查询语句
-fn build_items_sql(author_table: &str) -> String {
-    format!(
-        r#"
+/// SQL 查询公共字段部分（用于消除重复 SQL 模板）
+/// 简化：将重复的 SELECT 子句提取为公共函数
+const SQL_SELECT_BASE: &str = r#"
         SELECT
             i.itemID as item_id,
             fv_title.value as title,
@@ -74,7 +67,7 @@ fn build_items_sql(author_table: &str) -> String {
                     COALESCE(c.lastName, '') || COALESCE(c.firstName, ''),
                     '; '
                 )
-                FROM {} ia
+                FROM {author_table} ia
                 JOIN creators c ON ia.creatorID = c.creatorID
                 WHERE ia.itemID = i.itemID
                 ORDER BY ia.orderIndex
@@ -86,87 +79,41 @@ fn build_items_sql(author_table: &str) -> String {
         LEFT JOIN itemData id_date ON i.itemID = id_date.itemID
             AND id_date.fieldID = (SELECT fieldID FROM fields WHERE fieldName = 'date')
         LEFT JOIN itemDataValues fv_date ON id_date.valueID = fv_date.valueID
-        WHERE i.itemID IS NOT NULL
-        ORDER BY fv_date.value DESC, fv_title.value ASC
-        LIMIT 100
-        "#,
-        author_table
+"#;
+
+/// SQL WHERE 子句公共部分
+const SQL_WHERE_CLAUSE: &str = "WHERE i.itemID IS NOT NULL";
+/// SQL ORDER BY 公共部分
+const SQL_ORDER_BY: &str = "ORDER BY fv_date.value DESC, fv_title.value ASC";
+
+/// 获取带作者信息的 SQL 查询语句
+/// 简化：使用公共 SQL 片段组合出完整查询
+fn build_items_sql(author_table: &str) -> String {
+    format!(
+        "{}\n{}\n{}\nLIMIT 100",
+        SQL_SELECT_BASE.replace("{author_table}", author_table),
+        SQL_WHERE_CLAUSE,
+        SQL_ORDER_BY
     )
 }
 
 /// 获取带作者信息的分页 SQL 查询语句
-///
-/// # 参数
-/// * `author_table` - 作者关联表名
-///
-/// # 返回值
-/// * `String` - 完整的分页 SQL 查询语句
+/// 简化：使用公共 SQL 片段组合出完整查询
 fn build_items_paginated_sql(author_table: &str) -> String {
     format!(
-        r#"
-        SELECT
-            i.itemID as item_id,
-            fv_title.value as title,
-            fv_date.value as year,
-            (
-                SELECT GROUP_CONCAT(
-                    COALESCE(c.lastName, '') || COALESCE(c.firstName, ''),
-                    '; '
-                )
-                FROM {} ia
-                JOIN creators c ON ia.creatorID = c.creatorID
-                WHERE ia.itemID = i.itemID
-                ORDER BY ia.orderIndex
-            ) as authors
-        FROM items i
-        LEFT JOIN itemData id_title ON i.itemID = id_title.itemID
-            AND id_title.fieldID = (SELECT fieldID FROM fields WHERE fieldName = 'title')
-        LEFT JOIN itemDataValues fv_title ON id_title.valueID = fv_title.valueID
-        LEFT JOIN itemData id_date ON i.itemID = id_date.itemID
-            AND id_date.fieldID = (SELECT fieldID FROM fields WHERE fieldName = 'date')
-        LEFT JOIN itemDataValues fv_date ON id_date.valueID = fv_date.valueID
-        WHERE i.itemID IS NOT NULL
-        ORDER BY fv_date.value DESC, fv_title.value ASC
-        LIMIT ? OFFSET ?
-        "#,
-        author_table
+        "{}\n{}\n{}\nLIMIT ? OFFSET ?",
+        SQL_SELECT_BASE.replace("{author_table}", author_table),
+        SQL_WHERE_CLAUSE,
+        SQL_ORDER_BY
     )
 }
 
 /// 获取单条文献信息的 SQL 查询语句
-///
-/// # 参数
-/// * `author_table` - 作者关联表名
-///
-/// # 返回值
-/// * `String` - 完整的 SQL 查询语句
+/// 简化：使用公共 SQL 片段组合出完整查询
 fn build_item_by_id_sql(author_table: &str) -> String {
     format!(
-        r#"
-        SELECT
-            i.itemID as item_id,
-            fv_title.value as title,
-            fv_date.value as year,
-            (
-                SELECT GROUP_CONCAT(
-                    COALESCE(c.lastName, '') || COALESCE(c.firstName, ''),
-                    '; '
-                )
-                FROM {} ia
-                JOIN creators c ON ia.creatorID = c.creatorID
-                WHERE ia.itemID = i.itemID
-                ORDER BY ia.orderIndex
-            ) as authors
-        FROM items i
-        LEFT JOIN itemData id_title ON i.itemID = id_title.itemID
-            AND id_title.fieldID = (SELECT fieldID FROM fields WHERE fieldName = 'title')
-        LEFT JOIN itemDataValues fv_title ON id_title.valueID = fv_title.valueID
-        LEFT JOIN itemData id_date ON i.itemID = id_date.itemID
-            AND id_date.fieldID = (SELECT fieldID FROM fields WHERE fieldName = 'date')
-        LEFT JOIN itemDataValues fv_date ON id_date.valueID = fv_date.valueID
-        WHERE i.itemID = ?
-        "#,
-        author_table
+        "{}\nWHERE i.itemID = ?",
+        SQL_SELECT_BASE.replace("{author_table}", author_table)
     )
 }
 

@@ -232,12 +232,6 @@ pub fn validate_zotero_database(conn: &Connection) -> Result<Vec<String>, DbVali
 }
 
 /// 验证数据库并返回详细诊断信息
-///
-/// # 参数
-/// * `conn` - 数据库连接
-///
-/// # 返回值
-/// * `DatabaseDiagnosis` - 诊断信息结构体
 pub fn diagnose_database(conn: &Connection) -> DatabaseDiagnosis {
     let tables = get_all_table_names(conn).unwrap_or_default();
 
