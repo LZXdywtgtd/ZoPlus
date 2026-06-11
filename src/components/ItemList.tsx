@@ -10,6 +10,7 @@ import useAppStore from '../store/appStore';
 import { getItems } from '../utils/tauriCommands';
 import type { ItemInfo } from '../store/appStore';
 import SummaryButton from './SummaryButton';
+import ImportButton from './ImportButton';
 
 const { Text, Title } = Typography;
 
@@ -204,15 +205,18 @@ function ItemList() {
     <Space direction="vertical" style={{ width: '100%' }} size="large">
       <Space style={{ justifyContent: 'space-between', width: '100%' }}>
         <Title level={5}>文献列表</Title>
-        {selectedItemIds.length > 0 && (
-          <Button
-            type="primary"
-            icon={<SwapOutlined />}
-            onClick={handleBatchCompare}
-          >
-            批量对比 ({selectedItemIds.length})
-          </Button>
-        )}
+        <Space>
+          <ImportButton onImportSuccess={loadItems} />
+          {selectedItemIds.length > 0 && (
+            <Button
+              type="primary"
+              icon={<SwapOutlined />}
+              onClick={handleBatchCompare}
+            >
+              批量对比 ({selectedItemIds.length})
+            </Button>
+          )}
+        </Space>
       </Space>
       <Table
         columns={columns}

@@ -41,6 +41,7 @@ use ai::comparison_commands::{
 use ai::citation_graph_commands::{
     get_citation_graph, get_key_papers, get_paper_citations,
 };
+use import::{import_file_async, ImportResult};
 use std::path::PathBuf;
 
 // 数据库访问模块
@@ -53,6 +54,8 @@ pub mod ai;
 pub mod sync;
 // PDF 模块
 pub mod pdf;
+// 文件导入模块
+pub mod import;
 // 统一错误处理模块
 pub mod error;
 
@@ -193,6 +196,23 @@ fn reset_db_connection() -> bool {
     true
 }
 
+/// Tauri 命令：导入本地 PDF 文件
+///
+/// # 参数
+/// * `file_path` - PDF 文件的完整路径
+/// * `max_file_size` - 最大文件大小（字节），可选，默认 100MB
+///
+/// # 返回值
+/// * `Result<ImportResult, String>` - 导入结果或错误信息
+#[tauri::command]
+async fn import_file(
+    file_path: String,
+    max_file_size: Option<u64>,
+) -> Result<ImportResult, String> {
+    eprintln!("[命令] import_file 被调用: file_path={}", file_path);
+    import_file_async(file_path, max_file_size).await
+}
+
 /// 将 DbError 转换为用户友好的错误消息
 fn db_error_to_user_message(err: &DbErr) -> String {
     match err {
@@ -276,6 +296,8 @@ pub fn run() {
             has_annotations,
             get_annotation_file_path,
             get_annotation_stats,
+            // 文件导入命令
+            import_file,
             // 全文搜索相关命令
             init_search_index,
             build_search_index,

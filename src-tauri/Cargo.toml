@@ -39,6 +39,8 @@ bytes = "1"
 futures-util = "0.3"
 # 正则表达式
 regex = "1"
+# 随机数生成
+rand = "0.8"
 
 [dev-dependencies]
 tempfile = "3"

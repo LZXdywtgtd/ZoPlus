@@ -80,6 +80,36 @@ export async function selectDatabasePath(path: string): Promise<boolean> {
   return await invoke<boolean>('select_database_path', { path });
 }
 
+// ============== 文件导入相关 ==============
+
+/// 导入结果结构
+export interface ImportResult {
+  /// 新建的文献ID
+  item_id: number;
+  /// 文献标题
+  title: string;
+  /// 文件路径
+  file_path: string;
+  /// 导入状态消息
+  message: string;
+}
+
+/// 导入本地 PDF 文件
+///
+/// @param filePath - PDF 文件的完整路径
+/// @param maxFileSize - 最大文件大小（字节），可选，默认 100MB
+/// @returns Promise<ImportResult> 导入结果
+/// @throws 文件不存在、不是 PDF、文件过大或数据库操作失败时抛出异常
+export async function importFile(
+  filePath: string,
+  maxFileSize?: number
+): Promise<ImportResult> {
+  return await invoke<ImportResult>('import_file', {
+    filePath,
+    maxFileSize,
+  });
+}
+
 // ============== PDF 标注相关 ==============
 
 /// 标注类型
