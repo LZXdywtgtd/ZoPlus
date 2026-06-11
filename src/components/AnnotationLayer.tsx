@@ -4,6 +4,8 @@
 //! 支持高亮、矩形、椭圆、箭头、自由绘制、文本笔记等标注类型
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { Button } from 'antd';
+import { DeleteOutlined } from '@ant-design/icons';
 
 // ============== 类型定义 ==============
 
@@ -278,7 +280,7 @@ const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
   viewport,
   onAnnotationCreate,
   onAnnotationUpdate: _onAnnotationUpdate,
-  onAnnotationDelete: _onAnnotationDelete,
+  onAnnotationDelete,
   onAnnotationClick,
   onAnnotationSelect,
   onNavigateTo: _onNavigateTo,
@@ -796,20 +798,67 @@ const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
   };
 
   return (
-    <canvas
-      ref={canvasRef}
-      style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        pointerEvents: enabled ? 'auto' : 'none',
-        cursor: enabled ? (mode === 'select' ? 'default' : 'crosshair') : 'default',
-      }}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          pointerEvents: enabled ? 'auto' : 'none',
+          cursor: enabled ? (mode === 'select' ? 'default' : 'crosshair') : 'default',
+        }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+      />
+      {/* 选中标注的删除按钮 */}
+      {state.selectedAnnotation && onAnnotationDelete && (
+        <div
+          style={{
+            position: 'absolute',
+            left: (() => {
+              const data = state.selectedAnnotation!.data as any;
+              if ('rect' in data) {
+                return (data.rect.x + data.rect.width) * (viewport?.scale || 1);
+              } else if ('end' in data) {
+                return Math.max(data.start.x, data.end.x) * (viewport?.scale || 1);
+              } else if ('position' in data) {
+                return data.position.x * (viewport?.scale || 1);
+              }
+              return 0;
+            })(),
+            top: (() => {
+              const data = state.selectedAnnotation!.data as any;
+              if ('rect' in data) {
+                return (viewport?.height || 0) - (data.rect.y + data.rect.height) * (viewport?.scale || 1);
+              } else if ('end' in data) {
+                return (viewport?.height || 0) - Math.max(data.start.y, data.end.y) * (viewport?.scale || 1);
+              } else if ('position' in data) {
+                return (viewport?.height || 0) - data.position.y * (viewport?.scale || 1);
+              }
+              return 0;
+            })(),
+            transform: 'translate(-50%, -100%)',
+            zIndex: 1000,
+          }}
+        >
+          <Button
+            type="primary"
+            danger
+            size="small"
+            icon={<DeleteOutlined />}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAnnotationDelete(state.selectedAnnotation!.id);
+            }}
+          >
+            删除
+          </Button>
+        </div>
+      )}
+    </>
   );
 };
 

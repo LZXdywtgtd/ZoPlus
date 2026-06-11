@@ -324,3 +324,51 @@ pub struct AnnotationStats {
     /// 涉及的页数
     pub page_count: u32,
 }
+
+// ============== PDF 文本提取命令 ==============
+
+use crate::pdf::text_extract::{extract_text_from_pdf, extract_text_from_pdf_range, PdfTextError};
+
+/// Tauri 命令：提取 PDF 全文文本
+///
+/// # 参数
+/// * `pdf_path` - PDF 文件路径
+///
+/// # 返回值
+/// * `Result<String, String>` - 提取的文本内容
+#[tauri::command]
+pub fn extract_pdf_text(pdf_path: String) -> Result<String, String> {
+    extract_text_from_pdf(&std::path::PathBuf::from(&pdf_path)).map_err(|e| {
+        eprintln!("[PDF文本提取] 提取失败: pdf_path={}, error={}", pdf_path, e);
+        e.to_string()
+    })
+}
+
+/// Tauri 命令：提取 PDF 指定页码范围的文本
+///
+/// # 参数
+/// * `pdf_path` - PDF 文件路径
+/// * `start_page` - 起始页码（从 1 开始）
+/// * `end_page` - 结束页码
+///
+/// # 返回值
+/// * `Result<String, String>` - 提取的文本内容
+#[tauri::command]
+pub fn extract_pdf_text_range(
+    pdf_path: String,
+    start_page: u32,
+    end_page: u32,
+) -> Result<String, String> {
+    extract_text_from_pdf_range(
+        &std::path::PathBuf::from(&pdf_path),
+        start_page,
+        end_page,
+    )
+    .map_err(|e| {
+        eprintln!(
+            "[PDF文本提取] 范围提取失败: pdf_path={}, pages={}-{}, error={}",
+            pdf_path, start_page, end_page, e
+        );
+        e.to_string()
+    })
+}

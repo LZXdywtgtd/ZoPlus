@@ -11,7 +11,8 @@ use db::{
 use db::path::get_zotero_database_path;
 use error::{get_user_message, AppError};
 use pdf::commands::{
-    delete_all_annotations, delete_annotation, get_annotation_file_path, get_annotation_stats,
+    delete_all_annotations, delete_annotation, extract_pdf_text, extract_pdf_text_range,
+    get_annotation_file_path, get_annotation_stats,
     has_annotations, load_annotations, load_annotations_by_page, save_annotation, save_annotations,
     update_annotation,
 };
@@ -323,6 +324,8 @@ pub fn run() {
             has_annotations,
             get_annotation_file_path,
             get_annotation_stats,
+            extract_pdf_text,
+            extract_pdf_text_range,
             // 文件导入命令
             import_file,
             // 文献删除命令

@@ -19,6 +19,7 @@
 pub mod annotations;
 pub mod commands;
 pub mod storage;
+pub mod text_extract;
 
 // 重新导出常用的类型和函数
 pub use annotations::*;
