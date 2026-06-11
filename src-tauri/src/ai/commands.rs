@@ -51,10 +51,9 @@ fn get_validated_provider(config: &AIConfig) -> Result<Arc<dyn AIProvider>, Stri
 }
 
 /// 获取数据库连接的辅助函数（统一错误处理）
-fn get_db_connection() -> Result<rusqlite::Connection, String> {
-    let guard = crate::db::connection::get_connection()
-        .map_err(|e| format!("获取数据库连接失败: {}", e))?;
-    guard.as_ref().ok_or_else(|| "数据库连接未初始化".to_string()).map(|c| c.clone())
+/// 返回数据库连接的可变引用，调用方需确保在guard有效期内使用
+fn get_db_connection<'a>(guard: &'a mut Option<rusqlite::Connection>) -> Result<&'a mut rusqlite::Connection, String> {
+    guard.as_mut().ok_or_else(|| "数据库连接未初始化".to_string())
 }
 
 /// Tauri 命令：获取 AI 配置
@@ -129,19 +128,34 @@ pub fn get_all_ai_models() -> Vec<ModelInfo> {
 pub fn get_ai_models_by_provider(provider: AIProviderType) -> Vec<ModelInfo> {
     use crate::ai::providers;
     let dummy_key = "dummy".to_string();
-    let result = match provider {
-        // 使用泛型函数获取模型列表，避免重复代码
-        AIProviderType::OpenAI => providers::openai::OpenAIProvider::new(dummy_key.clone(), None),
-        AIProviderType::Anthropic => providers::anthropic::AnthropicProvider::new(dummy_key.clone(), None),
-        AIProviderType::DeepSeek => providers::deepseek::DeepSeekProvider::new(dummy_key.clone(), None),
-        AIProviderType::Doubao => providers::doubao::DoubaoProvider::new(dummy_key.clone(), None),
-        AIProviderType::Qwen => providers::qwen::QwenProvider::new(dummy_key.clone(), None),
-        AIProviderType::Glm => providers::glm::GlmProvider::new(dummy_key.clone(), None),
-        AIProviderType::MiniMax => providers::minimax::MiniMaxProvider::new(dummy_key.clone(), None),
-        AIProviderType::MiMo => providers::mimo::MiMoProvider::new(dummy_key.clone(), None),
+    let provider: Arc<dyn AIProvider> = match provider {
+        AIProviderType::OpenAI => {
+            Arc::new(providers::openai::OpenAIProvider::new(dummy_key.clone(), None).map_err(|e| e.to_string()).unwrap()) as Arc<dyn AIProvider>
+        }
+        AIProviderType::Anthropic => {
+            Arc::new(providers::anthropic::AnthropicProvider::new(dummy_key.clone(), None).map_err(|e| e.to_string()).unwrap()) as Arc<dyn AIProvider>
+        }
+        AIProviderType::DeepSeek => {
+            Arc::new(providers::deepseek::DeepSeekProvider::new(dummy_key.clone(), None).map_err(|e| e.to_string()).unwrap()) as Arc<dyn AIProvider>
+        }
+        AIProviderType::Doubao => {
+            Arc::new(providers::doubao::DoubaoProvider::new(dummy_key.clone(), None).map_err(|e| e.to_string()).unwrap()) as Arc<dyn AIProvider>
+        }
+        AIProviderType::Qwen => {
+            Arc::new(providers::qwen::QwenProvider::new(dummy_key.clone(), None).map_err(|e| e.to_string()).unwrap()) as Arc<dyn AIProvider>
+        }
+        AIProviderType::Glm => {
+            Arc::new(providers::glm::GlmProvider::new(dummy_key.clone(), None).map_err(|e| e.to_string()).unwrap()) as Arc<dyn AIProvider>
+        }
+        AIProviderType::MiniMax => {
+            Arc::new(providers::minimax::MiniMaxProvider::new(dummy_key.clone(), None).map_err(|e| e.to_string()).unwrap()) as Arc<dyn AIProvider>
+        }
+        AIProviderType::MiMo => {
+            Arc::new(providers::mimo::MiMoProvider::new(dummy_key.clone(), None).map_err(|e| e.to_string()).unwrap()) as Arc<dyn AIProvider>
+        }
     };
-    // 统一处理：成功返回模型列表，失败返回空向量
-    result.map(|p| p.get_available_models()).unwrap_or_default()
+    // 返回模型列表
+    provider.get_available_models()
 }
 
 /// Tauri 命令：获取模型价格
@@ -265,7 +279,7 @@ pub async fn generate_notes_batch(
 
 /// 解析模板类型字符串为 NoteTemplate 枚举
 fn parse_template_type(template: &str) -> NoteTemplate {
-    match template.as_str() {
+    match template {
         "key_points" => NoteTemplate::KeyPoints,
         "methods" => NoteTemplate::Methods,
         "conclusions" => NoteTemplate::Conclusions,
@@ -282,7 +296,9 @@ pub fn save_note_to_item(
 ) -> Result<bool, String> {
     eprintln!("[命令] save_note_to_item 被调用: item_id={}", item_id);
 
-    let conn = get_db_connection()?;
+    let mut guard = crate::db::connection::get_connection()
+        .map_err(|e| format!("获取数据库连接失败: {}", e))?;
+    let conn = get_db_connection(&mut guard)?;
 
     // 将笔记序列化为 JSON
     let note_json = note.to_json().map_err(|e| format!("序列化笔记失败: {}", e))?;
@@ -307,7 +323,9 @@ pub fn save_note_to_item(
 pub fn get_notes_for_item(item_id: i32) -> Result<Vec<Note>, String> {
     eprintln!("[命令] get_notes_for_item 被调用: item_id={}", item_id);
 
-    let conn = get_db_connection()?;
+    let mut guard = crate::db::connection::get_connection()
+        .map_err(|e| format!("获取数据库连接失败: {}", e))?;
+    let conn = get_db_connection(&mut guard)?;
 
     // 从 itemNotes 表查询笔记
     let sql = "SELECT noteID, itemID, note, clientDate FROM itemNotes WHERE itemID = ? ORDER BY clientDate DESC";
@@ -337,7 +355,9 @@ pub fn get_notes_for_item(item_id: i32) -> Result<Vec<Note>, String> {
 pub fn delete_note(note_id: String) -> Result<bool, String> {
     eprintln!("[命令] delete_note 被调用: note_id={}", note_id);
 
-    let conn = get_db_connection()?;
+    let mut guard = crate::db::connection::get_connection()
+        .map_err(|e| format!("获取数据库连接失败: {}", e))?;
+    let conn = get_db_connection(&mut guard)?;
 
     // 从 itemNotes 表删除笔记
     let sql = "DELETE FROM itemNotes WHERE noteID = ?";
@@ -353,7 +373,9 @@ pub fn delete_note(note_id: String) -> Result<bool, String> {
 pub fn update_note(note: Note) -> Result<bool, String> {
     eprintln!("[命令] update_note 被调用: note_id={}", note.note_id);
 
-    let conn = get_db_connection()?;
+    let mut guard = crate::db::connection::get_connection()
+        .map_err(|e| format!("获取数据库连接失败: {}", e))?;
+    let conn = get_db_connection(&mut guard)?;
 
     // 将笔记序列化为 JSON
     let note_json = note.to_json().map_err(|e| format!("序列化笔记失败: {}", e))?;
