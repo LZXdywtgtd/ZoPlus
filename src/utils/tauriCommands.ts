@@ -919,3 +919,64 @@ export async function answerPaperQuestion(
     question: question,
   });
 }
+
+// ============== 前端日志上报相关 ==============
+
+/// 日志级别枚举
+export enum LogLevel {
+  Trace = 'trace',
+  Debug = 'debug',
+  Info = 'info',
+  Warn = 'warn',
+  Error = 'error',
+}
+
+/// 日志上报函数
+///
+/// @param level - 日志级别
+/// @param message - 日志消息
+/// @param error - 错误对象（可选）
+export async function log(level: LogLevel, message: string, error?: unknown) {
+  try {
+    let fullMessage = message;
+    if (error) {
+      const errorDetails = Object.getOwnPropertyNames(error)
+        .map((key) => `${key}: ${(error as any)[key]}`)
+        .join(', ');
+      fullMessage += `\n错误详情: ${errorDetails}`;
+    }
+    await invoke('log_frontend', { level, message: fullMessage });
+  } catch (e) {
+    console.error('[日志] 日志上报失败:', e);
+  }
+}
+
+/// 日志上报到后端（log_frontend 命令的便捷封装）
+///
+/// @param level - 日志级别
+/// @param message - 日志消息
+/// @param error - 错误对象（可选）
+export async function logToBackend(level: LogLevel, message: string, error?: unknown) {
+  return log(level, message, error);
+}
+
+///记录错误日志
+///
+/// @param msg - 日志消息
+/// @param err - 错误对象（可选）
+export const logError = (msg: string, err?: unknown) => log(LogLevel.Error, msg, err);
+
+/// 记录信息日志
+///
+/// @param msg - 日志消息
+export const logInfo = (msg: string) => log(LogLevel.Info, msg);
+
+/// 记录调试日志
+///
+/// @param msg - 日志消息
+export const logDebug = (msg: string) => log(LogLevel.Debug, msg);
+
+/// 记录警告日志
+///
+/// @param msg - 日志消息
+export const logWarn = (msg: string) => log(LogLevel.Warn, msg);
