@@ -3,7 +3,7 @@
 //! 以表格形式展示文献列表，支持加载状态和错误提示和批量选择
 
 import { useEffect, useRef, useState } from 'react';
-import { Table, Alert, Space, Typography, Empty, Tag, Button, message, Modal, Popconfirm } from 'antd';
+import { Table, Alert, Space, Typography, Empty, Tag, Button, message, Modal } from 'antd';
 import { FileTextOutlined, LoadingOutlined, SwapOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import useAppStore from '../store/appStore';
@@ -13,70 +13,6 @@ import SummaryButton from './SummaryButton';
 import ImportButton from './ImportButton';
 
 const { Text, Title } = Typography;
-
-/// 文献列表表格列定义
-const columns: ColumnsType<ItemInfo> = [
-  {
-    title: '文献ID',
-    dataIndex: 'item_id',
-    key: 'item_id',
-    width: 100,
-    sorter: (a, b) => a.item_id - b.item_id,
-  },
-  {
-    title: '标题',
-    dataIndex: 'title',
-    key: 'title',
-    ellipsis: true,
-    render: (text: string) => (
-      <Space>
-        <FileTextOutlined />
-        <Text strong>{text || '无标题'}</Text>
-      </Space>
-    ),
-  },
-  {
-    title: '作者',
-    dataIndex: 'authors',
-    key: 'authors',
-    ellipsis: true,
-    render: (text: string) => (
-      <Text type="secondary">{text || '未知作者'}</Text>
-    ),
-  },
-  {
-    title: '年份',
-    dataIndex: 'year',
-    key: 'year',
-    width: 120,
-    sorter: (a, b) => {
-      const yearA = parseInt(a.year) || 0;
-      const yearB = parseInt(b.year) || 0;
-      return yearA - yearB;
-    },
-    render: (text: string) => {
-      if (!text) return <Text type="secondary">-</Text>;
-      return <Tag color="blue">{text}</Tag>;
-    },
-  },
-  {
-    title: '操作',
-    key: 'action',
-    width: 150,
-    render: (_: unknown, record: ItemInfo) => (
-      <Space>
-        <SummaryButton itemId={record.item_id} showDropdown />
-        <Button
-          type="text"
-          size="small"
-          danger
-          icon={<DeleteOutlined />}
-          onClick={() => handleDeleteClick(record.item_id, record.title)}
-        />
-      </Space>
-    ),
-  },
-];
 
 /// 文献列表展示组件
 function ItemList() {
@@ -95,6 +31,70 @@ function ItemList() {
     setDeletingTitle(title || '未知标题');
     setDeleteModalVisible(true);
   };
+
+  // 文献列表表格列定义
+  const columns: ColumnsType<ItemInfo> = [
+    {
+      title: '文献ID',
+      dataIndex: 'item_id',
+      key: 'item_id',
+      width: 100,
+      sorter: (a, b) => a.item_id - b.item_id,
+    },
+    {
+      title: '标题',
+      dataIndex: 'title',
+      key: 'title',
+      ellipsis: true,
+      render: (text: string) => (
+        <Space>
+          <FileTextOutlined />
+          <Text strong>{text || '无标题'}</Text>
+        </Space>
+      ),
+    },
+    {
+      title: '作者',
+      dataIndex: 'authors',
+      key: 'authors',
+      ellipsis: true,
+      render: (text: string) => (
+        <Text type="secondary">{text || '未知作者'}</Text>
+      ),
+    },
+    {
+      title: '年份',
+      dataIndex: 'year',
+      key: 'year',
+      width: 120,
+      sorter: (a, b) => {
+        const yearA = parseInt(a.year) || 0;
+        const yearB = parseInt(b.year) || 0;
+        return yearA - yearB;
+      },
+      render: (text: string) => {
+        if (!text) return <Text type="secondary">-</Text>;
+        return <Tag color="blue">{text}</Tag>;
+      },
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 150,
+      render: (_: unknown, record: ItemInfo) => (
+        <Space>
+          <SummaryButton itemId={record.item_id} showDropdown />
+          <Button
+            type="text"
+            size="small"
+            danger
+            icon={<DeleteOutlined />}
+            onClick={() => handleDeleteClick(record.item_id, record.title)}
+          />
+        </Space>
+      ),
+    },
+  ];
 
   // 确认删除
   const handleConfirmDelete = async () => {

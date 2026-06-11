@@ -106,6 +106,7 @@ interface PdfReaderProps {
 const PdfReader: React.FC<PdfReaderProps> = ({
   filePath: propFilePath,
   fileName: propFileName,
+  itemId: propItemId,
 }) => {
   // 路由导航
   const navigate = useNavigate();
@@ -113,6 +114,7 @@ const PdfReader: React.FC<PdfReaderProps> = ({
   // 状态
   const [filePath, setFilePath] = useState<string>(propFilePath || '');
   const [fileName, setFileName] = useState<string>(propFileName || '');
+  const [itemId] = useState<number | undefined>(propItemId);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [scale, setScale] = useState<number>(1);
@@ -564,11 +566,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: 4,
     maxHeight: 300,
     overflow: 'auto',
-  },
-  qaAnswer h4: {
-    margin: '0 0 8px 0',
-    fontSize: 12,
-    color: '#666',
   },
   emptyState: {
     display: 'flex',

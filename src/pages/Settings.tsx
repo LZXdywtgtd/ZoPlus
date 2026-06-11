@@ -5,8 +5,9 @@
 //! 提供通用设置（主题、语言等）
 
 import React, { useState, useEffect } from 'react';
-import { Card, Form, Select, Input, Button, Switch, Space, message, Alert, Divider } from 'antd';
-import { KeyOutlined, ApiOutlined, ExperimentOutlined, SaveOutlined, CloudOutlined, SyncOutlined, SettingOutlined, GlobalOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { Card, Form, Select, Input, Button, Switch, Space, message, Alert, Divider, Typography } from 'antd';
+const { Text } = Typography;
+import { KeyOutlined, ApiOutlined, ExperimentOutlined, SaveOutlined, CloudOutlined, SyncOutlined, SettingOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { invoke } from '@tauri-apps/api/core';
 import ThemeSwitch from '../components/ThemeSwitch';
 
@@ -30,9 +31,6 @@ interface AIConfig {
   api_key: string;
   base_url?: string;
 }
-
-// 主题存储键名
-const THEME_STORAGE_KEY = 'zoplus-theme-is-dark';
 
 // 厂商显示名称映射
 const providerDisplayNames: Record<AIProviderType, string> = {
@@ -262,7 +260,7 @@ const Settings: React.FC<SettingsProps> = ({ isDark = false, onToggleTheme }) =>
         style={{ marginBottom: '24px' }}
       >
         <Form layout="vertical">
-          <Divider orientation="left">界面设置</Divider>
+          <Divider orientation={'left' as any}>界面设置</Divider>
 
           <Form.Item label="主题">
             <Space>
@@ -314,7 +312,7 @@ const Settings: React.FC<SettingsProps> = ({ isDark = false, onToggleTheme }) =>
         )}
 
         <Form form={form} layout="vertical" initialValues={{}}>
-          <Divider orientation="left">基本设置</Divider>
+          <Divider orientation={'left' as any}>基本设置</Divider>
 
           <Form.Item label="AI 厂商" name="provider">
             <Select
@@ -344,7 +342,7 @@ const Settings: React.FC<SettingsProps> = ({ isDark = false, onToggleTheme }) =>
             </Select>
           </Form.Item>
 
-          <Divider orientation="left">API 配置</Divider>
+          <Divider orientation={'left' as any}>API 配置</Divider>
 
           <Form.Item
             label="API Key"
@@ -406,7 +404,7 @@ const Settings: React.FC<SettingsProps> = ({ isDark = false, onToggleTheme }) =>
         style={{ marginTop: '24px' }}
       >
         <Form layout="vertical">
-          <Divider orientation="left">服务器配置</Divider>
+          <Divider orientation={'left' as any}>服务器配置</Divider>
 
           <Form.Item label="服务器地址">
             <Input
@@ -426,7 +424,7 @@ const Settings: React.FC<SettingsProps> = ({ isDark = false, onToggleTheme }) =>
             />
           </Form.Item>
 
-          <Divider orientation="left">同步选项</Divider>
+          <Divider orientation={'left' as any}>同步选项</Divider>
 
           <Form.Item label="同步模式">
             <Select
@@ -489,12 +487,12 @@ const Settings: React.FC<SettingsProps> = ({ isDark = false, onToggleTheme }) =>
           <div>
             <strong>ZoPlus</strong> v0.1.0
           </div>
-          <div type="secondary">
+          <Text type="secondary">
             基于 Tauri + React + Rust 构建的论文管理软件
-          </div>
-          <div type="secondary">
+          </Text>
+          <Text type="secondary">
             集成 MiniMax AI 与阿里云云同步功能
-          </div>
+          </Text>
         </Space>
       </Card>
     </div>

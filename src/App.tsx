@@ -10,7 +10,6 @@ import zhCN from 'antd/locale/zh_CN';
 import { useState, useEffect, useCallback } from 'react';
 import Dashboard from './pages/Dashboard';
 import PdfReader from './pages/PdfReader';
-import ThemeSwitch from './components/ThemeSwitch';
 import { lightTheme, darkTheme } from './themes/themeConfig';
 import './App.css';
 

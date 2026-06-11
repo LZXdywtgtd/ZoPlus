@@ -16,7 +16,6 @@ import {
   Tag,
   Modal,
   Form,
-  InputNumber,
   Divider,
   Tooltip,
 } from 'antd';
@@ -24,7 +23,6 @@ import {
   CopyOutlined,
   ClearOutlined,
   SwapOutlined,
-  SaveOutlined,
   PlusOutlined,
   DeleteOutlined,
   EditOutlined,
@@ -321,30 +319,6 @@ function CitationFormatter() {
     }
   };
 
-  /// 从 Zotero 补全元数据
-  const handleEnrichFromZotero = async (itemId: number) => {
-    const metadata = editingMetadata || parsedResult?.metadata;
-    if (!metadata) {
-      message.warning('没有可补全的元数据');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const enriched = await invoke<CitationMetadata>('enrich_citation_metadata', {
-        itemId,
-        metadata,
-      });
-      setEditingMetadata(enriched);
-      message.success('元数据已从 Zotero 补全');
-    } catch (error) {
-      console.error('补全元数据失败:', error);
-      message.error(`补全失败: ${error}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <Space direction="vertical" style={{ width: '100%' }} size="large">
       <Card>
@@ -464,7 +438,7 @@ function CitationFormatter() {
               size="small"
               bordered
               dataSource={batchResults}
-              renderItem={(item, index) => (
+              renderItem={(item, _index) => (
                 <List.Item
                   actions={[
                     <Tooltip title="复制">

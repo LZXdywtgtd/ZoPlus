@@ -39,8 +39,6 @@ import {
   getKeyPapers,
   getPaperCitations,
   type CitationGraph,
-  type CitationNode,
-  type CitationEdge,
   type KeyPaper,
   type PaperCitations,
 } from '../utils/tauriCommands';
@@ -239,10 +237,10 @@ function CitationGraphPage() {
 
     // 点击节点事件
     chart.off('click');
-    chart.on('click', async (params: any) => {
+    chart.on('click', (params: any) => {
       if (params.dataType === 'node') {
         const itemId = parseInt(params.data.id);
-        await handleNodeClick(itemId);
+        handleNodeClick(itemId);
       }
     });
 
@@ -380,7 +378,7 @@ function CitationGraphPage() {
         <Card size="small" style={{ marginBottom: 16 }}>
           <Text strong style={{ fontSize: 16 }}>{paperCitations.title}</Text>
           <br />
-          <Text type="secondary">{paperCitations.authors} ({paperCitations.year})</Text>
+          <Text type="secondary">{paperCitations.authors}</Text>
         </Card>
 
         <Space direction="vertical" style={{ width: '100%' }} size="large">

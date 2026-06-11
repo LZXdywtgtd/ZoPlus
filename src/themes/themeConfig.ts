@@ -24,7 +24,7 @@ export const lightTheme: ThemeConfig = {
     // 文字色
     colorTextBase: '#000000',
     // 边框色
-    colorBorderBase: '#d9d9d9',
+    colorBorderBg: '#d9d9d9',
     // 链接色
     colorLink: '#1890ff',
     // 链接悬停色
@@ -35,20 +35,12 @@ export const lightTheme: ThemeConfig = {
     colorTextDisabled: '#0000003b',
     // 背景色（次级）
     colorBgLayout: '#f5f5f5',
-    // 头部背景色
-    colorBgHeader: '#ffffff',
     // 容器背景色
     colorBgContainer: '#ffffff',
     // 组件背景色
     colorBgElevated: '#ffffff',
     // 斑马纹背景色
     colorBgSpotlight: '#fafafa',
-    // 表格头部背景色
-    colorBgTableHeader: '#fafafa',
-    // 侧边栏背景色
-    colorBgSider: '#001629',
-    // 分割线颜色
-    colorSplitBorder: '#f0f0f0',
     // 字体
     fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
     // 字号
@@ -103,7 +95,7 @@ export const darkTheme: ThemeConfig = {
     // 文字色
     colorTextBase: '#ffffff',
     // 边框色
-    colorBorderBase: '#434343',
+    colorBorderBg: '#434343',
     // 链接色
     colorLink: '#1890ff',
     // 链接悬停色
@@ -114,20 +106,12 @@ export const darkTheme: ThemeConfig = {
     colorTextDisabled: '#ffffff3b',
     // 背景色（次级）
     colorBgLayout: '#000000',
-    // 头部背景色
-    colorBgHeader: '#141414',
     // 容器背景色
     colorBgContainer: '#1f1f1f',
     // 组件背景色
     colorBgElevated: '#262626',
     // 斑马纹背景色
     colorBgSpotlight: '#262626',
-    // 表格头部背景色
-    colorBgTableHeader: '#262626',
-    // 侧边栏背景色
-    colorBgSider: '#001629',
-    // 分割线颜色
-    colorSplitBorder: '#303030',
     // 字体
     fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
     // 字号
