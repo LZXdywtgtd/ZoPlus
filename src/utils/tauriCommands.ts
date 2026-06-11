@@ -888,3 +888,34 @@ export async function getPaperCitations(itemId: number): Promise<PaperCitations>
     item_id: itemId,
   });
 }
+
+// ============== 单篇文献智能问答相关 ==============
+
+/// 单篇文献问答结果
+export interface PaperQAResult {
+  /// 回答内容
+  answer: string;
+  /// 使用的上下文类型（pdf 或 abstract）
+  context_type: string;
+  /// 上下文长度（字符数）
+  context_length: number;
+}
+
+/// 单篇文献智能问答
+///
+/// @param itemId - 文献 ID
+/// @param pdfPath - PDF 文件路径（可选）
+/// @param question - 用户问题
+/// @returns Promise<PaperQAResult> 问答结果
+/// @throws AI 未配置或问答失败时抛出异常
+export async function answerPaperQuestion(
+  itemId: number,
+  pdfPath: string | null,
+  question: string
+): Promise<PaperQAResult> {
+  return await invoke<PaperQAResult>('answer_paper_question', {
+    item_id: itemId,
+    pdf_path: pdfPath,
+    question: question,
+  });
+}

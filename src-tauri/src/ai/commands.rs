@@ -425,3 +425,32 @@ fn parse_zoplus_note(content: &str) -> Option<Note> {
         Note::from_json(content).ok()
     }
 }
+
+// ============== 单篇文献问答命令 ==============
+
+use crate::ai::qa::{PaperQARequest, PaperQAResult};
+
+/// Tauri 命令：单篇文献智能问答
+#[tauri::command]
+pub async fn answer_paper_question(
+    state: State<'_, AIState>,
+    item_id: i32,
+    pdf_path: Option<String>,
+    question: String,
+) -> Result<PaperQAResult, String> {
+    eprintln!(
+        "[命令] answer_paper_question 被调用: item_id={}, pdf_path={:?}",
+        item_id, pdf_path
+    );
+
+    let config = state.config_manager.get_config();
+    let provider = get_validated_provider(&config)?;
+
+    let request = PaperQARequest {
+        item_id,
+        pdf_path,
+        question,
+    };
+
+    crate::ai::qa::answer_paper_question(&*provider, &request).map_err(|e| e.to_string())
+}

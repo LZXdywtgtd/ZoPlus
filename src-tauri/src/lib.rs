@@ -43,6 +43,7 @@ use ai::comparison_commands::{
 use ai::citation_graph_commands::{
     get_citation_graph, get_key_papers, get_paper_citations,
 };
+use ai::commands::answer_paper_question;
 use import::{import_file_async, ImportResult};
 use std::path::PathBuf;
 
@@ -392,6 +393,8 @@ pub fn run() {
             get_citation_graph,
             get_key_papers,
             get_paper_citations,
+            // 单篇文献问答命令
+            answer_paper_question,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

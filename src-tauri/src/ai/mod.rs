@@ -35,6 +35,7 @@ pub mod comparison;
 pub mod comparison_commands;
 pub mod citation_graph;
 pub mod citation_graph_commands;
+pub mod qa;
 
 pub use traits::AIProvider;
 pub use errors::AIError;
@@ -53,3 +54,4 @@ pub use comparison::{ArticleComparison, ComparisonDimensions, Contradiction, Con
 pub use comparison_commands::{compare_articles, get_comparison_result, has_comparison_result, export_comparison, get_comparison_as_markdown, get_comparison_as_csv};
 pub use citation_graph::{CitationNode, CitationEdge, CitationGraph, KeyPaper, PaperCitations};
 pub use citation_graph_commands::{get_citation_graph, get_key_papers, get_paper_citations};
+pub use qa::{PaperQARequest, PaperQAResult, QAError, answer_paper_question};

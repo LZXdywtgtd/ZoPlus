@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Layout, Tooltip, Button, message } from 'antd';
+import { Layout, Tooltip, Button, message, Input } from 'antd';
 import {
   ArrowLeftOutlined,
   HighlightOutlined,
@@ -17,6 +17,8 @@ import {
   UndoOutlined,
   SaveOutlined,
   FolderOutlined,
+  QuestionOutlined,
+  SendOutlined,
 } from '@ant-design/icons';
 import PdfViewer from '../components/PdfViewer';
 import AnnotationLayer, {
@@ -28,7 +30,7 @@ import AnnotationLayer, {
   getDefaultColor,
 } from '../components/AnnotationLayer';
 import AnnotationList from '../components/AnnotationList';
-import { loadAnnotations, saveAnnotations } from '../utils/tauriCommands';
+import { loadAnnotations, saveAnnotations, answerPaperQuestion } from '../utils/tauriCommands';
 import type { PDFPageProxy } from 'pdfjs-dist';
 
 // ============== 常量 ==============
@@ -120,6 +122,10 @@ const PdfReader: React.FC<PdfReaderProps> = ({
   const [selectedAnnotation, setSelectedAnnotation] = useState<Annotation | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [showAnnotationList, setShowAnnotationList] = useState<boolean>(true);
+  const [showQAPanel, setShowQAPanel] = useState<boolean>(false);
+  const [qaQuestion, setQaQuestion] = useState<string>('');
+  const [qaAnswer, setQaAnswer] = useState<string>('');
+  const [qaLoading, setQaLoading] = useState<boolean>(false);
   const [viewport, setViewport] = useState<{
     scale: number;
     rotation: number;
@@ -250,6 +256,30 @@ const PdfReader: React.FC<PdfReaderProps> = ({
   const handleGoBack = () => {
     navigate(-1);
   };
+
+  /**
+   * 问答功能：向论文提问
+   */
+  const handleAskQuestion = useCallback(async () => {
+    if (!qaQuestion.trim() || !itemId) {
+      message.warning('请输入问题');
+      return;
+    }
+
+    setQaLoading(true);
+    setQaAnswer(''); // 清空之前的回答
+
+    try {
+      // 传入 filePath 作为 pdfPath
+      const result = await answerPaperQuestion(itemId, filePath || null, qaQuestion);
+      setQaAnswer(result.answer);
+    } catch (err) {
+      console.error('问答失败:', err);
+      message.error('问答失败: ' + (err as Error).message);
+    } finally {
+      setQaLoading(false);
+    }
+  }, [qaQuestion, itemId, filePath]);
 
   /**
    * 撤销（删除最后一条标注）
@@ -407,6 +437,42 @@ const PdfReader: React.FC<PdfReaderProps> = ({
         {/* 标注列表侧边栏 */}
         {showAnnotationList && filePath && (
           <Layout.Sider width={280} style={styles.sider}>
+            {/* 智能问答面板 */}
+            {itemId && (
+              <div style={styles.qaPanel}>
+                <div style={styles.qaHeader} onClick={() => setShowQAPanel(!showQAPanel)}>
+                  <span><QuestionOutlined /> 智能问答</span>
+                  <span>{showQAPanel ? '收起' : '展开'}</span>
+                </div>
+                {showQAPanel && (
+                  <div style={styles.qaContent}>
+                    <Input.TextArea
+                      value={qaQuestion}
+                      onChange={(e) => setQaQuestion(e.target.value)}
+                      placeholder="请输入关于这篇论文的问题..."
+                      rows={2}
+                      disabled={qaLoading}
+                    />
+                    <Button
+                      type="primary"
+                      icon={<SendOutlined />}
+                      onClick={handleAskQuestion}
+                      loading={qaLoading}
+                      style={{ marginTop: 8, width: '100%' }}
+                    >
+                      提问
+                    </Button>
+                    {qaAnswer && (
+                      <div style={styles.qaAnswer}>
+                        <h4>回答：</h4>
+                        <pre style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{qaAnswer}</pre>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             <AnnotationList
               annotations={annotations}
               currentPage={currentPage}
@@ -475,6 +541,34 @@ const styles: { [key: string]: React.CSSProperties } = {
   sider: {
     backgroundColor: '#fff',
     overflow: 'auto',
+  },
+  qaPanel: {
+    borderBottom: '1px solid #f0f0f0',
+    padding: '12px',
+  },
+  qaHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    cursor: 'pointer',
+    fontWeight: 500,
+    color: '#1890ff',
+  },
+  qaContent: {
+    marginTop: 12,
+  },
+  qaAnswer: {
+    marginTop: 12,
+    padding: '8px',
+    backgroundColor: '#f5f5f5',
+    borderRadius: 4,
+    maxHeight: 300,
+    overflow: 'auto',
+  },
+  qaAnswer h4: {
+    margin: '0 0 8px 0',
+    fontSize: 12,
+    color: '#666',
   },
   emptyState: {
     display: 'flex',
