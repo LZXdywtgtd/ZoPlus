@@ -7,9 +7,11 @@
 //! - [x] 索引构建与增量更新
 //! - [x] 中文分词支持（通过 SimpleAnalyzer）
 //! - [x] 数据库变更监听（预留接口）
+//! - [x] 索引锁超时与过期锁清理机制
 
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::time::{Duration, SystemTime};
 use tantivy::schema::*;
 use tantivy::{doc, Index, IndexReader, IndexWriter, ReloadPolicy};
 
@@ -38,6 +40,9 @@ pub enum IndexerError {
     /// 查询解析错误
     #[error("查询解析失败: {0}")]
     QueryParseError(String),
+    /// 索引初始化失败（综合错误）
+    #[error("索引初始化失败: {0}")]
+    InitFailed(String),
 }
 
 /// 文献文档结构
@@ -91,6 +96,48 @@ pub struct SearchIndexer {
     reader: Option<IndexReader>,
 }
 
+/// 清理过期的索引锁文件
+///
+/// 检查 `write.lock` 文件是否存在，如果存在且修改时间超过指定时长，
+/// 则认为是过期的锁文件并删除之。
+///
+/// # 参数
+/// * `index_dir` - 索引目录路径
+/// * `max_age` - 锁文件最大存活时长，超过此时长认为是过期的
+///
+/// # 返回值
+/// * `bool` - 是否清理了过期锁文件
+fn cleanup_stale_lock(index_dir: &PathBuf, max_age: Duration) -> bool {
+    let lock_file = index_dir.join("write.lock");
+    if lock_file.exists() {
+        if let Ok(metadata) = lock_file.metadata() {
+            if let Ok(modified) = metadata.modified() {
+                if let Ok(elapsed) = SystemTime::now().duration_since(modified) {
+                    if elapsed > max_age {
+                        eprintln!(
+                            "[搜索] 发现过期索引锁文件，正在清理: {:?}",
+                            lock_file
+                        );
+                        match std::fs::remove_file(&lock_file) {
+                            Ok(_) => {
+                                println!("[搜索] 索引锁文件已清理");
+                                return true;
+                            }
+                            Err(e) => {
+                                eprintln!(
+                                    "[搜索] 清理索引锁文件失败: {:?}, error: {}",
+                                    lock_file, e
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
 impl SearchIndexer {
     /// 创建新的索引构建器
     pub fn new(index_path: PathBuf) -> Result<Self, IndexerError> {
@@ -121,6 +168,9 @@ impl SearchIndexer {
             std::fs::create_dir_all(&self.index_path)?;
         }
 
+        // 清理可能存在的过期锁文件（超过60秒的锁认为是过期的）
+        let _lock_cleaned = cleanup_stale_lock(&self.index_path, Duration::from_secs(60));
+
         // 打开或创建索引
         let index = if self.index_path.join("meta.json").exists() {
             Index::open_in_dir(&self.index_path)?
@@ -128,8 +178,32 @@ impl SearchIndexer {
             Index::create_in_dir(&self.index_path, self.schema.clone())?
         };
 
-        // 创建 Writer（内存缓冲 50MB）
-        let writer = index.writer(50_000_000)?;
+        //尝试创建 Writer（内存缓冲 50MB）
+        // 如果锁被占用，先清理过期锁后重试
+        let writer = match index.writer(50_000_000) {
+            Ok(w) => w,
+            Err(e) => {
+                // 如果锁被占用，先清理后重试一次
+                eprintln!(
+                    "[搜索] 获取索引写入器失败（可能是锁冲突），尝试清理后重试: {:?}",
+                    e
+                );
+                //清理任何存在的锁文件（不考虑超时）
+                cleanup_stale_lock(&self.index_path, Duration::ZERO);
+
+                //重新打开索引并创建 writer
+                let index = if self.index_path.join("meta.json").exists() {
+                    Index::open_in_dir(&self.index_path)?
+                } else {
+                    Index::create_in_dir(&self.index_path, self.schema.clone())?
+                };
+
+                index
+                    .writer(50_000_000)
+                    .map_err(|e2| IndexerError::InitFailed(format!("首次获取写入器失败: {:?}, 重试后失败: {:?}", e, e2)))?
+            }
+        };
+
         self.writer = Some(Mutex::new(writer));
 
         // 创建 Reader（实时刷新）
