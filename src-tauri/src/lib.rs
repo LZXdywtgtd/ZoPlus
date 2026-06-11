@@ -65,6 +65,8 @@ pub mod pdf;
 pub mod import;
 // 统一错误处理模块
 pub mod error;
+// 日志系统模块
+pub mod logger;
 
 /// Tauri 命令：获取所有文献列表（异步）
 ///
@@ -293,6 +295,9 @@ fn get_search_index_path() -> PathBuf {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 初始化日志系统（必须最先）
+    logger::init_logger("ZoPlus");
+
     //初始化搜索状态
     let search_index_path = get_search_index_path();
     let search_state = SearchState::new(search_index_path);
@@ -302,6 +307,8 @@ pub fn run() {
 
     // 初始化 RAG 状态
     let rag_state = RagState::new();
+
+    log_info!("ZoPlus 应用启动");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())

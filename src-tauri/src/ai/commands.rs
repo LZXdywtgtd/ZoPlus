@@ -5,6 +5,7 @@
 use std::sync::Arc;
 use tauri::State;
 use rusqlite::params;
+use tokio::time::{timeout, Duration};
 
 use crate::ai::traits::AIProvider;
 use crate::ai::{
@@ -114,7 +115,23 @@ pub async fn chat_completion(
 pub async fn test_ai_connection(state: State<'_, AIState>) -> Result<bool, String> {
     let config = state.config_manager.get_config();
     let provider = get_validated_provider(&config)?;
-    provider.test_connection().map_err(|e| e.to_string())
+
+    // 使用超时避免连接测试无限等待
+    let result = timeout(Duration::from_secs(10), async {
+        // 在阻塞线程中运行同步的 test_connection 调用
+        let provider = provider.clone();
+        tokio::task::spawn_blocking(move || {
+            provider.test_connection()
+        })
+        .await
+        .map_err(|e| crate::ai::AIError::Unknown(e.to_string()))?
+    }).await;
+
+    match result {
+        Ok(Ok(v)) => Ok(v),
+        Ok(Err(e)) => Err(e.to_string()),
+        Err(_) => Err("测试连接超时（10秒），请检查网络或API配置".to_string()),
+    }
 }
 
 /// Tauri 命令：获取所有可用模型

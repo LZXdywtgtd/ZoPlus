@@ -5,10 +5,11 @@
 //! 提供通用设置（主题、语言等）
 
 import React, { useState, useEffect } from 'react';
-import { Card, Form, Select, Input, Button, Switch, Space, message, Alert, Divider, Typography } from 'antd';
+import { Card, Form, Select, Input, Button, Switch, Space, message, Alert, Divider, Typography, Badge } from 'antd';
 const { Text } = Typography;
-import { KeyOutlined, ApiOutlined, ExperimentOutlined, SaveOutlined, CloudOutlined, SyncOutlined, SettingOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { KeyOutlined, ApiOutlined, ExperimentOutlined, SaveOutlined, CloudOutlined, SyncOutlined, SettingOutlined, InfoCircleOutlined, FileTextOutlined, DeleteOutlined, DownloadOutlined } from '@ant-design/icons';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import ThemeSwitch from '../components/ThemeSwitch';
 
 // AI 厂商类型
@@ -72,6 +73,10 @@ const Settings: React.FC<SettingsProps> = ({ isDark = false, onToggleTheme }) =>
   // 语言设置
   const [language, setLanguage] = useState<string>('zh-CN');
 
+  // 日志查看相关状态
+  const [logs, setLogs] = useState<string[]>([]);
+  const [logConnected, setLogConnected] = useState(false);
+
   // 加载 AI 配置
   useEffect(() => {
     loadAIConfig();
@@ -88,6 +93,74 @@ const Settings: React.FC<SettingsProps> = ({ isDark = false, onToggleTheme }) =>
       setSelectedModel(filtered[0].id);
     }
   }, [selectedProvider, models]);
+
+  //监听后端日志事件
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    const setupListener = async () => {
+      try {
+        // 监听后端日志
+        unlisten = await listen<string>('log-entry', (event) => {
+          const logLine = event.payload;
+          setLogs(prev => [...prev.slice(-500), logLine]); // 保留最近500条
+        });
+        setLogConnected(true);
+        log_info('前端日志监听已连接');
+      } catch (e) {
+        console.warn('无法连接日志监听:', e);
+        setLogConnected(false);
+      }
+    };
+
+    setupListener();
+
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, []);
+
+  // 日志帮助函数
+  const log_info = (...args: any[]) => {
+    const logLine = formatLogLine('INFO', args);
+    setLogs(prev => [...prev.slice(-500), logLine]);
+  };
+
+  const formatLogLine = (level: string, args: any[]): string => {
+    const timestamp = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+    const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+    return `${timestamp} [${level}] ${msg}`;
+  };
+
+  const getLogColor = (log: string): string => {
+    if (log.includes('[ERROR]') || log.includes('error')) return '#ff4d4f';
+    if (log.includes('[WARN]') || log.includes('warn')) return '#faad14';
+    if (log.includes('[DEBUG]') || log.includes('debug')) return '#8c8c8c';
+    return '#52c41a';
+  };
+
+  const clearLogs = () => {
+    setLogs([]);
+    message.success('日志已清空');
+  };
+
+  const downloadLogs = (logs: string[]) => {
+    if (logs.length === 0) {
+      message.warning('没有日志可导出');
+      return;
+    }
+    const content = logs.join('\n');
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `zoplus-logs-${new Date().toISOString().slice(0, 10)}.log`;
+    a.click();
+    URL.revokeObjectURL(url);
+    message.success('日志已导出');
+  };
 
   // 加载语言设置
   const loadLanguageSetting = () => {
@@ -471,6 +544,72 @@ const Settings: React.FC<SettingsProps> = ({ isDark = false, onToggleTheme }) =>
             </div>
           )}
         </Form>
+      </Card>
+
+      {/* 日志查看 */}
+      <Card
+        title={
+          <Space>
+            <FileTextOutlined />
+            日志查看
+            {logConnected &&<Badge status="success" text="已连接" />}
+            {!logConnected && <Badge status="default" text="未连接" />}
+          </Space>
+        }
+        extra={
+          <Space>
+            <Button
+              icon={<DeleteOutlined />}
+              onClick={clearLogs}
+              disabled={logs.length === 0}
+              size="small"
+            >
+              清空
+            </Button>
+            <Button
+              icon={<DownloadOutlined />}
+              onClick={() => downloadLogs(logs)}
+              disabled={logs.length === 0}
+              size="small"
+            >
+              导出
+            </Button>
+          </Space>
+        }
+        style={{ marginTop: '24px' }}
+      >
+        <div
+          style={{
+            height: 300,
+            overflow: 'auto',
+            background: '#1e1e1e',
+            padding: '12px',
+            fontFamily: 'monospace',
+            fontSize: '12px',
+            borderRadius: '4px',
+            border: '1px solid #303030',
+          }}
+        >
+          {logs.length === 0 ? (
+            <div style={{ color: '#8c8c8c', textAlign: 'center', marginTop: '80px' }}>
+              暂无日志输出
+            </div>
+          ) : (
+            logs.map((log, i) => (
+              <div
+                key={i}
+                style={{
+                  color: getLogColor(log),
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-all',
+                  lineHeight: '1.6',
+                }}
+              >
+                {log}
+              </div>
+            ))
+          )}
+        </div>
       </Card>
 
       {/* 关于 */}
