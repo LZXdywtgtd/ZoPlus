@@ -20,7 +20,7 @@ use std::fs;
 use std::path::PathBuf;
 use tokio::time::{timeout, Duration};
 
-use crate::db::dynamic::find_zotero_table;
+use crate::db::dynamic::{find_zotero_table, find_items_key_column};
 use crate::db::metadata::DatabaseMetadata;
 use crate::db::path::get_zotero_database_path;
 
@@ -288,6 +288,12 @@ fn import_file_internal(
     let item_data_table = find_zotero_table(&metadata, "itemData")
         .ok_or_else(|| ImportError::DbOperationFailed("未找到 itemData 表".to_string()))?;
 
+    // 动态检测 key 列名（Zotero 可能使用 key、itemKey、keyString 等）
+    let key_column = find_items_key_column(&metadata)
+        .ok_or_else(|| ImportError::DbOperationFailed("未找到 items 表的 key 列".to_string()))?;
+
+    eprintln!("[导入] 检测到 key 列名: {}", key_column);
+
     // 在事务开始前获取所有需要的 field ID
     let title_field_id = get_field_id(&conn, &metadata, "title")?;
     let date_field_id = get_field_id(&conn, &metadata, "dateAdded").ok();
@@ -313,11 +319,11 @@ fn import_file_internal(
     // 从文件名提取标题
     let title = extract_title_from_filename(file_path);
 
-    // 插入 items 表（动态 SQL）
+    // 插入 items 表（动态 SQL，动态列名）
     let items_insert_sql = format!(
-        "INSERT INTO {} (itemID, itemKey, libraryID, keyByUser, itemTypeID, note, sig, clientDate, serverDate, synced, changed)
+        "INSERT INTO {} (itemID, {}, libraryID, keyByUser, itemTypeID, note, sig, clientDate, serverDate, synced, changed)
          VALUES (?, ?, 0, 0, 1, '', '', datetime('now'), datetime('now'), 0, datetime('now'))",
-        items_table
+        items_table, key_column
     );
     tx.execute(&items_insert_sql, params![new_item_id, item_key])
         .map_err(|e| {

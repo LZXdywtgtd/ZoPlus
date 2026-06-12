@@ -9,6 +9,8 @@
 use crate::ai::models::Message;
 use crate::ai::traits::AIProvider;
 use crate::db::connection::get_connection;
+use crate::db::metadata::get_cached_metadata;
+use crate::db::dynamic::{DynamicSqlBuilder, ZoteroTableCandidates};
 use crate::pdf::text_extract::extract_text_from_pdf;
 use std::path::PathBuf;
 
@@ -41,23 +43,44 @@ fn get_item_abstract(item_id: i32) -> Result<String, QAError> {
     let guard = get_connection().map_err(|e| QAError::DatabaseError(e.to_string()))?;
     let conn = guard.as_ref().ok_or_else(|| QAError::DatabaseError("数据库连接未初始化".to_string()))?;
 
+    // 获取动态元数据
+    let metadata = get_cached_metadata(conn)
+        .map_err(|e| QAError::DatabaseError(format!("获取元数据失败: {}", e)))?;
+    let dynamic = DynamicSqlBuilder::new(&metadata);
+
+    // 动态获取表名
+    let items_table = dynamic.find_table(ZoteroTableCandidates::ITEMS)
+        .ok_or_else(|| QAError::DatabaseError("未找到 items 表".to_string()))?;
+    let item_data_table = dynamic.find_table(ZoteroTableCandidates::ITEM_DATA)
+        .ok_or_else(|| QAError::DatabaseError("未找到 itemData 表".to_string()))?;
+    let item_data_values_table = dynamic.find_table(ZoteroTableCandidates::ITEM_DATA_VALUES)
+        .ok_or_else(|| QAError::DatabaseError("未找到 itemDataValues 表".to_string()))?;
+    let fields_table = dynamic.find_table(ZoteroTableCandidates::FIELDS)
+        .ok_or_else(|| QAError::DatabaseError("未找到 fields 表".to_string()))?;
+
     // 查询文献标题和摘要
-    let sql = r#"
-    SELECT
-        fv_title.value as title,
-        fv_abstract.value as abstract_text
-    FROM items i
-    LEFT JOIN itemData id_title ON i.itemID = id_title.itemID
-        AND id_title.fieldID = (SELECT fieldID FROM fields WHERE fieldName = 'title')
-    LEFT JOIN itemDataValues fv_title ON id_title.valueID = fv_title.valueID
-    LEFT JOIN itemData id_abstract ON i.itemID = id_abstract.itemID
-        AND id_abstract.fieldID = (SELECT fieldID FROM fields WHERE fieldName = 'abstractNote')
-    LEFT JOIN itemDataValues fv_abstract ON id_abstract.valueID = fv_abstract.valueID
-    WHERE i.itemID = ?
-    "#;
+    let sql = format!(
+        r#"
+        SELECT
+            fv_title.value as title,
+            fv_abstract.value as abstract_text
+        FROM {items_table} i
+        LEFT JOIN {item_data_table} id_title ON i.itemID = id_title.itemID
+            AND id_title.fieldID = (SELECT fieldID FROM {fields_table} WHERE fieldName = 'title')
+        LEFT JOIN {item_data_values_table} fv_title ON id_title.valueID = fv_title.valueID
+        LEFT JOIN {item_data_table} id_abstract ON i.itemID = id_abstract.itemID
+            AND id_abstract.fieldID = (SELECT fieldID FROM {fields_table} WHERE fieldName = 'abstractNote')
+        LEFT JOIN {item_data_values_table} fv_abstract ON id_abstract.valueID = fv_abstract.valueID
+        WHERE i.itemID = ?
+        "#,
+        items_table = items_table,
+        item_data_table = item_data_table,
+        item_data_values_table = item_data_values_table,
+        fields_table = fields_table
+    );
 
     let result = conn
-        .query_row(sql, [item_id], |row| {
+        .query_row(&sql, [item_id], |row| {
             Ok((
                 row.get::<_, String>(0).unwrap_or_default(),
                 row.get::<_, Option<String>>(1).ok().flatten(),

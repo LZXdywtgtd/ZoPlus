@@ -8,56 +8,43 @@ use serde::{Deserialize, Serialize};
 use tokio::time::{timeout, Duration};
 
 use super::connection::{query_no_params_on_connection, query_with_mapper_on_connection, DbError};
+use super::metadata::get_cached_metadata;
+use super::dynamic::{DynamicSqlBuilder, ZoteroTableCandidates};
 
 /// 查询超时时间（秒）
 const QUERY_TIMEOUT_SECS: u64 = 10;
 
-/// 作者关联表名缓存（避免每次查询都检测）
-static AUTHOR_TABLE_NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-
-/// 检测实际使用的作者关联表名
-///
-/// Zotero 数据库中作者关联表的表名可能是 itemCreators、itemAuthors 或 itemCreator
-/// 本函数通过检测 sqlite_master 表来确定实际使用的表名
+/// 动态构建文献查询 SQL
 ///
 /// # 参数
 /// * `conn` - 数据库连接
+/// * `use_limit` - 是否添加 LIMIT 子句
+/// * `item_id_filter` - 可选的单条文献 ID 过滤
 ///
 /// # 返回值
-/// * `String` - 检测到的作者关联表名
-fn detect_author_table_name(conn: &Connection) -> String {
-    // 如果已经检测过，直接返回缓存值
-    if let Some(cached) = AUTHOR_TABLE_NAME.get() {
-        return cached.clone();
-    }
+/// * `String` - 动态构建的 SQL 查询语句
+fn build_items_sql(conn: &Connection, use_limit: bool, item_id_filter: Option<i32>) -> Result<String, DbError> {
+    let metadata = get_cached_metadata(conn)
+        .map_err(|e| DbError::QueryFailed(format!("获取元数据失败: {}", e)))?;
+    let dynamic = DynamicSqlBuilder::new(&metadata);
 
-    let candidates = ["itemCreators", "itemAuthors", "itemCreator"];
-    for table in candidates {
-        let exists = conn
-            .query_row(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                [table],
-                |_| Ok(true),
-            )
-            .unwrap_or(false);
-        if exists {
-            eprintln!("[数据库] 检测到作者关联表: {}", table);
-            let result = table.to_string();
-            // 缓存检测结果
-            let _ = AUTHOR_TABLE_NAME.set(result.clone());
-            return result;
-        }
-    }
-    // 默认值（标准 Zotero 表名）
-    eprintln!("[数据库] 未检测到作者关联表，使用默认值: itemCreators");
-    let default = "itemCreators".to_string();
-    let _ = AUTHOR_TABLE_NAME.set(default.clone());
-    default
-}
+    // 动态获取表名
+    let items_table = dynamic.find_table(ZoteroTableCandidates::ITEMS)
+        .ok_or_else(|| DbError::QueryFailed("未找到 items 表".to_string()))?;
+    let item_data_table = dynamic.find_table(ZoteroTableCandidates::ITEM_DATA)
+        .ok_or_else(|| DbError::QueryFailed("未找到 itemData 表".to_string()))?;
+    let item_data_values_table = dynamic.find_table(ZoteroTableCandidates::ITEM_DATA_VALUES)
+        .ok_or_else(|| DbError::QueryFailed("未找到 itemDataValues 表".to_string()))?;
+    let fields_table = dynamic.find_table(ZoteroTableCandidates::FIELDS)
+        .ok_or_else(|| DbError::QueryFailed("未找到 fields 表".to_string()))?;
+    let authors_table = dynamic.find_table(ZoteroTableCandidates::CREATORS)
+        .ok_or_else(|| DbError::QueryFailed("未找到 itemCreators 表".to_string()))?;
+    let creators_table = dynamic.find_table(ZoteroTableCandidates::CREATOR)
+        .ok_or_else(|| DbError::QueryFailed("未找到 creators 表".to_string()))?;
 
-/// SQL 查询公共字段部分（用于消除重复 SQL 模板）
-/// 简化：将重复的 SELECT 子句提取为公共函数
-const SQL_SELECT_BASE: &str = r#"
+    // 构建动态 SQL
+    let sql = format!(
+        r#"
         SELECT
             i.itemID as item_id,
             fv_title.value as title,
@@ -67,55 +54,41 @@ const SQL_SELECT_BASE: &str = r#"
                     COALESCE(c.lastName, '') || COALESCE(c.firstName, ''),
                     '; '
                 )
-                FROM {author_table} ia
-                JOIN creators c ON ia.creatorID = c.creatorID
+                FROM {authors_table} ia
+                JOIN {creators_table} c ON ia.creatorID = c.creatorID
                 WHERE ia.itemID = i.itemID
                 ORDER BY ia.orderIndex
             ) as authors
-        FROM items i
-        LEFT JOIN itemData id_title ON i.itemID = id_title.itemID
-            AND id_title.fieldID = (SELECT fieldID FROM fields WHERE fieldName = 'title')
-        LEFT JOIN itemDataValues fv_title ON id_title.valueID = fv_title.valueID
-        LEFT JOIN itemData id_date ON i.itemID = id_date.itemID
-            AND id_date.fieldID = (SELECT fieldID FROM fields WHERE fieldName = 'date')
-        LEFT JOIN itemDataValues fv_date ON id_date.valueID = fv_date.valueID
-"#;
+        FROM {items_table} i
+        LEFT JOIN {item_data_table} id_title ON i.itemID = id_title.itemID
+            AND id_title.fieldID = (SELECT fieldID FROM {fields_table} WHERE fieldName = 'title')
+        LEFT JOIN {item_data_values_table} fv_title ON id_title.valueID = fv_title.valueID
+        LEFT JOIN {item_data_table} id_date ON i.itemID = id_date.itemID
+            AND id_date.fieldID = (SELECT fieldID FROM {fields_table} WHERE fieldName = 'date')
+        LEFT JOIN {item_data_values_table} fv_date ON id_date.valueID = fv_date.valueID
+        "#,
+        items_table = items_table,
+        item_data_table = item_data_table,
+        item_data_values_table = item_data_values_table,
+        fields_table = fields_table,
+        authors_table = authors_table,
+        creators_table = creators_table
+    );
 
-/// SQL WHERE 子句公共部分
-const SQL_WHERE_CLAUSE: &str = "WHERE i.itemID IS NOT NULL";
-/// SQL ORDER BY 公共部分
-const SQL_ORDER_BY: &str = "ORDER BY fv_date.value DESC, fv_title.value ASC";
+    let mut result = sql;
+    if let Some(item_id) = item_id_filter {
+        result.push_str(&format!(" WHERE i.itemID = {}", item_id));
+    } else {
+        result.push_str(" WHERE i.itemID IS NOT NULL");
+    }
+    result.push_str(" ORDER BY fv_date.value DESC, fv_title.value ASC");
+    if use_limit {
+        result.push_str(" LIMIT 100");
+    }
 
-/// 获取带作者信息的 SQL 查询语句
-/// 简化：使用公共 SQL 片段组合出完整查询
-fn build_items_sql(author_table: &str) -> String {
-    format!(
-        "{}\n{}\n{}\nLIMIT 100",
-        SQL_SELECT_BASE.replace("{author_table}", author_table),
-        SQL_WHERE_CLAUSE,
-        SQL_ORDER_BY
-    )
+    Ok(result)
 }
 
-/// 获取带作者信息的分页 SQL 查询语句
-/// 简化：使用公共 SQL 片段组合出完整查询
-fn build_items_paginated_sql(author_table: &str) -> String {
-    format!(
-        "{}\n{}\n{}\nLIMIT ? OFFSET ?",
-        SQL_SELECT_BASE.replace("{author_table}", author_table),
-        SQL_WHERE_CLAUSE,
-        SQL_ORDER_BY
-    )
-}
-
-/// 获取单条文献信息的 SQL 查询语句
-/// 简化：使用公共 SQL 片段组合出完整查询
-fn build_item_by_id_sql(author_table: &str) -> String {
-    format!(
-        "{}\nWHERE i.itemID = ?",
-        SQL_SELECT_BASE.replace("{author_table}", author_table)
-    )
-}
 
 /// 文献基本信息结构体
 ///
@@ -153,15 +126,11 @@ pub fn get_all_items() -> Result<Vec<ItemInfo>, DbError> {
     })?;
 
     // 检查文献数量（诊断用）
-    let item_count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM items", [], |row| row.get(0))
-        .unwrap_or(0);
-    eprintln!("[文献查询] 数据库中共有 {} 篇文献", item_count);
+    let metadata = get_cached_metadata(conn)
+        .map_err(|e| DbError::QueryFailed(format!("获取元数据失败: {}", e)))?;
+    eprintln!("[文献查询] 数据库元数据已加载，包含 {} 个表", metadata.table_count());
 
-    let author_table = detect_author_table_name(conn);
-    let sql = build_items_sql(&author_table);
-
-    eprintln!("[文献查询] 使用的作者表: {}", author_table);
+    let sql = build_items_sql(conn, true, None)?;
 
     let result = query_no_params_on_connection(conn, &sql, |row| {
         Ok(ItemInfo {
@@ -188,7 +157,7 @@ pub fn get_all_items() -> Result<Vec<ItemInfo>, DbError> {
 /// * `Result<Vec<ItemInfo>, DbError>` - 文献信息列表
 ///
 /// # 查询逻辑
-/// 1. 检测数据库中实际的作者关联表名
+/// 1. 通过动态元数据系统获取表名
 /// 2. 从 items 表查询 itemID、title、date
 /// 3. 通过 itemCreators 表关联 creators 表获取作者信息
 /// 4. 多个作者按 orderIndex 排序后用分号合并
@@ -208,16 +177,12 @@ pub async fn get_all_items_async() -> Result<Vec<ItemInfo>, DbError> {
                 DbError::ConnectionFailed("数据库连接未初始化".to_string())
             })?;
 
-            // 检查文献数量（诊断用）
-            let item_count: i64 = conn
-                .query_row("SELECT COUNT(*) FROM items", [], |row| row.get(0))
-                .unwrap_or(0);
-            eprintln!("[文献查询] 数据库中共有 {} 篇文献", item_count);
+            // 动态获取元数据
+            let metadata = get_cached_metadata(conn)
+                .map_err(|e| DbError::QueryFailed(format!("获取元数据失败: {}", e)))?;
+            eprintln!("[文献查询] 数据库元数据已加载，包含 {} 个表", metadata.table_count());
 
-            let author_table = detect_author_table_name(conn);
-            let sql = build_items_sql(&author_table);
-
-            eprintln!("[文献查询] 使用的作者表: {}", author_table);
+            let sql = build_items_sql(conn, true, None)?;
 
             query_no_params_on_connection(conn, &sql, |row| {
                 Ok(ItemInfo {
@@ -267,10 +232,20 @@ pub async fn get_item_by_id_async(item_id: i32) -> Result<Option<ItemInfo>, DbEr
             let conn = guard.as_ref().ok_or_else(|| {
                 DbError::ConnectionFailed("数据库连接未初始化".to_string())
             })?;
-            let author_table = detect_author_table_name(conn);
-            let sql = build_item_by_id_sql(&author_table);
 
+            // 动态获取元数据
+            let metadata = get_cached_metadata(conn)
+                .map_err(|e| DbError::QueryFailed(format!("获取元数据失败: {}", e)))?;
+            let dynamic = DynamicSqlBuilder::new(&metadata);
+
+            // 获取表名用于日志
+            let author_table = dynamic.find_table(ZoteroTableCandidates::CREATORS)
+                .unwrap_or("itemCreators");
             eprintln!("[文献查询] 根据ID查询文献: item_id={}, 作者表={}", item_id, author_table);
+
+            // 动态构建 SQL（不使用 WHERE i.itemID = ?，而是在 SQL 末尾添加条件）
+            let base_sql = build_items_sql(conn, false, None)?;
+            let sql = format!("{} AND i.itemID = ?", base_sql);
 
             let results = query_with_mapper_on_connection(conn, &sql, params![item_id], |row| {
                 Ok(ItemInfo {
@@ -302,7 +277,7 @@ pub async fn get_item_by_id_async(item_id: i32) -> Result<Option<ItemInfo>, DbEr
 /// * `limit` - 返回记录数上限
 ///
 /// # 返回值
-/// * `Result<Vec<ItemInfo>, DbError>` - 文献信息列表
+/// * `Result<Vec<ItemInfo>, DbError>> - 文献信息列表
 pub async fn get_items_paginated_async(offset: i32, limit: i32) -> Result<Vec<ItemInfo>, DbError> {
     let start = std::time::Instant::now();
     eprintln!(
@@ -320,10 +295,20 @@ pub async fn get_items_paginated_async(offset: i32, limit: i32) -> Result<Vec<It
             let conn = guard.as_ref().ok_or_else(|| {
                 DbError::ConnectionFailed("数据库连接未初始化".to_string())
             })?;
-            let author_table = detect_author_table_name(conn);
-            let sql = build_items_paginated_sql(&author_table);
 
+            // 动态获取元数据
+            let metadata = get_cached_metadata(conn)
+                .map_err(|e| DbError::QueryFailed(format!("获取元数据失败: {}", e)))?;
+            let dynamic = DynamicSqlBuilder::new(&metadata);
+
+            // 获取表名用于日志
+            let author_table = dynamic.find_table(ZoteroTableCandidates::CREATORS)
+                .unwrap_or("itemCreators");
             eprintln!("[文献查询] 使用的作者表: {}", author_table);
+
+            // 动态构建分页 SQL
+            let base_sql = build_items_sql(conn, false, None)?;
+            let sql = format!("{}\nLIMIT ? OFFSET ?", base_sql);
 
             query_with_mapper_on_connection(conn, &sql, params![limit, offset], |row| {
                 Ok(ItemInfo {

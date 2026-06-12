@@ -2,6 +2,7 @@
 //!
 //! 提供基于 tracing 的永久日志系统，支持文件输出和控制台输出
 //! 日志文件按日期轮转，保存在用户数据目录下
+//! 同时提供前端日志接收命令 log_frontend
 
 use std::path::PathBuf;
 use std::sync::Once;
@@ -85,4 +86,21 @@ macro_rules! log_debug {
     ($($arg:tt)*) => {
         tracing::debug!($($arg)*);
     };
+}
+
+/// Tauri 命令：接收前端日志并写入日志系统
+///
+/// # 参数
+/// * `level` - 日志级别（trace/debug/info/warn/error）
+/// * `message` - 日志消息
+#[tauri::command]
+pub fn log_frontend(level: String, message: String) {
+    match level.as_str() {
+        "trace" => tracing::trace!("[前端] {}", message),
+        "debug" => tracing::debug!("[前端] {}", message),
+        "info" => tracing::info!("[前端] {}", message),
+        "warn" => tracing::warn!("[前端] {}", message),
+        "error" => tracing::error!("[前端] {}", message),
+        _ => tracing::info!("[前端] {}", message),
+    }
 }

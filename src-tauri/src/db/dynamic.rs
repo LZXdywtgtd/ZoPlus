@@ -177,6 +177,38 @@ pub fn find_zotero_table<'a>(metadata: &'a DatabaseMetadata, hint: &'a str) -> O
     metadata.find_table(&[hint])
 }
 
+/// 动态检测 items 表中的 key 列名
+///
+/// Zotero 可能使用 key、itemKey、keyString、itemKeyString 等列名
+/// 此函数扫描 items 表的列结构，查找匹配的列
+///
+/// # 参数
+/// * `metadata` - 数据库元数据中心
+///
+/// # 返回值
+/// * `Option<&str>` - 找到的 key 列名，或 None
+pub fn find_items_key_column(metadata: &DatabaseMetadata) -> Option<&str> {
+    // 查找 items 表
+    let items_table = metadata.find_table(ZoteroTableCandidates::ITEMS)?;
+
+    // 获取 items 表的元数据
+    let table_meta = metadata.get_table(items_table)?;
+
+    // key 列名的候选列表（按优先级排序）
+    let key_candidates = ["key", "itemKey", "keyString", "itemKeyString"];
+
+    // 扫描 items 表的列，查找匹配的 key 列
+    for col in &table_meta.columns {
+        for candidate in &key_candidates {
+            if col.name.eq_ignore_ascii_case(candidate) {
+                return Some(&col.name);
+            }
+        }
+    }
+
+    None
+}
+
 /// 检测 itemDataValues 表中是否已有相同的值
 ///
 /// # 参数

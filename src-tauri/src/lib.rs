@@ -45,6 +45,7 @@ use ai::citation_graph_commands::{
 };
 use ai::commands::answer_paper_question;
 use import::{import_file_async, import_folder_async, FolderImportResult, ImportResult};
+use logger::log_frontend;
 use sync::commands::{
     configure_sync, get_sync_config, get_sync_status, start_background_sync, stop_background_sync,
     sync_now,
@@ -326,6 +327,9 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_http::init())
         .manage(search_state)
         .manage(ai_state)
         .manage(rag_state)
@@ -428,6 +432,8 @@ pub fn run() {
             get_sync_config,
             start_background_sync,
             stop_background_sync,
+            // 前端日志接收命令
+            log_frontend,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

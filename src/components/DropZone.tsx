@@ -8,6 +8,7 @@ import type { UploadProps } from 'antd';
 import { InboxOutlined } from '@ant-design/icons';
 import { invoke } from '@tauri-apps/api/core';
 import useAppStore from '../store/appStore';
+import { logError, logInfo } from '../utils/tauriCommands';
 
 const { Dragger } = Upload;
 
@@ -30,7 +31,7 @@ function DropZone({ onImportSuccess }: DropZoneProps) {
   /** 处理文件导入 */
   const handleImport = useCallback(
     async (filePath: string, fileName: string) => {
-      console.log('[DropZone] 开始导入文件:', filePath);
+      logInfo(`[DropZone] 开始导入文件: ${filePath}`);
       setItemsLoading(true);
 
       try {
@@ -40,12 +41,13 @@ function DropZone({ onImportSuccess }: DropZoneProps) {
           maxFileSize: 100 * 1024 * 1024, // 100MB
         });
 
-        console.log('[DropZone] 导入成功:', result);
+        logInfo(`[DropZone] 导入成功: ${filePath} - ${result.title}`);
         message.success(result.message);
 
         // 触发回调
         onImportSuccess?.();
       } catch (error) {
+        logError(`[DropZone] 导入失败: ${filePath}`, error);
         console.error('[DropZone] 导入失败:', error);
         message.error(`导入失败: ${fileName} - ${error instanceof Error ? error.message : String(error)}`);
       } finally {
@@ -61,6 +63,8 @@ function DropZone({ onImportSuccess }: DropZoneProps) {
       e.preventDefault();
       setDragging(false);
 
+      logInfo('[DropZone] 开始拖拽导入');
+
       // Tauri 的拖拽事件直接提供真实路径
       const files = Array.from(e.dataTransfer.files);
 
@@ -70,6 +74,7 @@ function DropZone({ onImportSuccess }: DropZoneProps) {
           try {
             await handleImport(file.path, file.name);
           } catch (err) {
+            logError(`拖拽导入失败: ${file.name}`, err);
             message.error(`导入失败: ${file.name} - ${err}`);
           }
         }

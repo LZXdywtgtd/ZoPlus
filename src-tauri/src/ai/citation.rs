@@ -1605,29 +1605,56 @@ pub fn enrich_metadata_from_zotero(
     mut metadata: CitationMetadata,
 ) -> Result<CitationMetadata, String> {
     use crate::db::connection::get_connection;
+    use crate::db::metadata::get_cached_metadata;
+    use crate::db::dynamic::{DynamicSqlBuilder, ZoteroTableCandidates};
     use rusqlite::params;
 
     let guard = get_connection().map_err(|e| format!("获取数据库连接失败: {}", e))?;
     let conn = guard.as_ref().ok_or_else(|| "数据库连接未初始化".to_string())?;
 
+    // 获取动态元数据
+    let db_metadata = get_cached_metadata(conn)
+        .map_err(|e| format!("获取元数据失败: {}", e))?;
+    let dynamic = DynamicSqlBuilder::new(&db_metadata);
+
+    // 动态获取表名
+    let items_table = dynamic.find_table(ZoteroTableCandidates::ITEMS)
+        .ok_or_else(|| "未找到 items 表".to_string())?;
+    let item_data_table = dynamic.find_table(ZoteroTableCandidates::ITEM_DATA)
+        .ok_or_else(|| "未找到 itemData 表".to_string())?;
+    let item_data_values_table = dynamic.find_table(ZoteroTableCandidates::ITEM_DATA_VALUES)
+        .ok_or_else(|| "未找到 itemDataValues 表".to_string())?;
+    let fields_table = dynamic.find_table(ZoteroTableCandidates::FIELDS)
+        .ok_or_else(|| "未找到 fields 表".to_string())?;
+    let authors_table = dynamic.find_table(ZoteroTableCandidates::CREATORS)
+        .ok_or_else(|| "未找到 itemCreators 表".to_string())?;
+    let creators_table = dynamic.find_table(ZoteroTableCandidates::CREATOR)
+        .ok_or_else(|| "未找到 creators 表".to_string())?;
+
     // 查询文献基本信息
-    let sql = r#"
+    let sql = format!(
+        r#"
         SELECT
             i.itemID,
             fv_title.value as title,
             fv_date.value as year,
             i.itemTypeID
-        FROM items i
-        LEFT JOIN itemData id_title ON i.itemID = id_title.itemID
-            AND id_title.fieldID = (SELECT fieldID FROM fields WHERE fieldName = 'title')
-        LEFT JOIN itemDataValues fv_title ON id_title.valueID = fv_title.valueID
-        LEFT JOIN itemData id_date ON i.itemID = id_date.itemID
-            AND id_date.fieldID = (SELECT fieldID FROM fields WHERE fieldName = 'date')
-        LEFT JOIN itemDataValues fv_date ON id_date.valueID = fv_date.valueID
+        FROM {items_table} i
+        LEFT JOIN {item_data_table} id_title ON i.itemID = id_title.itemID
+            AND id_title.fieldID = (SELECT fieldID FROM {fields_table} WHERE fieldName = 'title')
+        LEFT JOIN {item_data_values_table} fv_title ON id_title.valueID = fv_title.valueID
+        LEFT JOIN {item_data_table} id_date ON i.itemID = id_date.itemID
+            AND id_date.fieldID = (SELECT fieldID FROM {fields_table} WHERE fieldName = 'date')
+        LEFT JOIN {item_data_values_table} fv_date ON id_date.valueID = fv_date.valueID
         WHERE i.itemID = ?
-    "#;
+        "#,
+        items_table = items_table,
+        item_data_table = item_data_table,
+        item_data_values_table = item_data_values_table,
+        fields_table = fields_table
+    );
 
-    let mut stmt = conn.prepare(sql).map_err(|e| format!("准备查询失败: {}", e))?;
+    let mut stmt = conn.prepare(&sql).map_err(|e| format!("准备查询失败: {}", e))?;
 
     let result = stmt.query_row(params![item_id], |row| {
         Ok((
@@ -1651,15 +1678,19 @@ pub fn enrich_metadata_from_zotero(
     }
 
     // 查询作者信息
-    let author_sql = r#"
+    let author_sql = format!(
+        r#"
         SELECT c.lastName, c.firstName
-        FROM itemCreators ia
-        JOIN creators c ON ia.creatorID = c.creatorID
+        FROM {authors_table} ia
+        JOIN {creators_table} c ON ia.creatorID = c.creatorID
         WHERE ia.itemID = ? AND ia.orderIndex >= 0
         ORDER BY ia.orderIndex
-    "#;
+        "#,
+        authors_table = authors_table,
+        creators_table = creators_table
+    );
 
-    let mut author_stmt = conn.prepare(author_sql).map_err(|e| format!("准备作者查询失败: {}", e))?;
+    let mut author_stmt = conn.prepare(&author_sql).map_err(|e| format!("准备作者查询失败: {}", e))?;
 
     let author_results: Vec<(String, String)> = author_stmt
         .query_map(params![item_id], |row| {
@@ -1687,15 +1718,20 @@ pub fn enrich_metadata_from_zotero(
     }
 
     // 查询其他元数据（DOI、ISBN 等）
-    let meta_sql = r#"
+    let meta_sql = format!(
+        r#"
         SELECT f.fieldName, fv.value
-        FROM itemData id
-        JOIN fields f ON id.fieldID = f.fieldID
-        JOIN itemDataValues fv ON id.valueID = fv.valueID
+        FROM {item_data_table} id
+        JOIN {fields_table} f ON id.fieldID = f.fieldID
+        JOIN {item_data_values_table} fv ON id.valueID = fv.valueID
         WHERE id.itemID = ?
-    "#;
+        "#,
+        item_data_table = item_data_table,
+        fields_table = fields_table,
+        item_data_values_table = item_data_values_table
+    );
 
-    let mut meta_stmt = conn.prepare(meta_sql).map_err(|e| format!("准备元数据查询失败: {}", e))?;
+    let mut meta_stmt = conn.prepare(&meta_sql).map_err(|e| format!("准备元数据查询失败: {}", e))?;
 
     let meta_results: Vec<(String, String)> = meta_stmt
         .query_map(params![item_id], |row| {

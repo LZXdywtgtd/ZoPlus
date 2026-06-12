@@ -11,6 +11,8 @@
 use crate::ai::models::{Message, Stream};
 use crate::ai::traits::AIProvider;
 use crate::db::connection::get_connection;
+use crate::db::metadata::get_cached_metadata;
+use crate::db::dynamic::{DynamicSqlBuilder, ZoteroTableCandidates};
 use crate::pdf::storage::AnnotationStorage;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -190,33 +192,60 @@ impl SummaryGenerator {
         let guard = get_connection().map_err(|e| SummaryError::DatabaseError(e.to_string()))?;
         let conn = guard.as_ref().ok_or_else(|| SummaryError::DatabaseError("数据库连接未初始化".to_string()))?;
 
-        // 获取文献基本信息
-        let sql = r#"
-        SELECT
-            i.itemID as item_id,
-            fv_title.value as title,
-            fv_date.value as year,
-            (
-                SELECT GROUP_CONCAT(
-                    COALESCE(c.lastName, '') || COALESCE(c.firstName, ''),
-                    '; '
-                )
-                FROM itemCreators ia
-                JOIN creators c ON ia.creatorID = c.creatorID
-                WHERE ia.itemID = i.itemID
-                ORDER BY ia.orderIndex
-            ) as authors
-        FROM items i
-        LEFT JOIN itemData id_title ON i.itemID = id_title.itemID
-            AND id_title.fieldID = (SELECT fieldID FROM fields WHERE fieldName = 'title')
-        LEFT JOIN itemDataValues fv_title ON id_title.valueID = fv_title.valueID
-        LEFT JOIN itemData id_date ON i.itemID = id_date.itemID
-            AND id_date.fieldID = (SELECT fieldID FROM fields WHERE fieldName = 'date')
-        WHERE i.itemID = ?
-        "#;
+        // 获取动态元数据
+        let metadata = get_cached_metadata(conn)
+            .map_err(|e| SummaryError::DatabaseError(format!("获取元数据失败: {}", e)))?;
+        let dynamic = DynamicSqlBuilder::new(&metadata);
+
+        // 动态获取表名
+        let items_table = dynamic.find_table(ZoteroTableCandidates::ITEMS)
+            .ok_or_else(|| SummaryError::DatabaseError("未找到 items 表".to_string()))?;
+        let item_data_table = dynamic.find_table(ZoteroTableCandidates::ITEM_DATA)
+            .ok_or_else(|| SummaryError::DatabaseError("未找到 itemData 表".to_string()))?;
+        let item_data_values_table = dynamic.find_table(ZoteroTableCandidates::ITEM_DATA_VALUES)
+            .ok_or_else(|| SummaryError::DatabaseError("未找到 itemDataValues 表".to_string()))?;
+        let fields_table = dynamic.find_table(ZoteroTableCandidates::FIELDS)
+            .ok_or_else(|| SummaryError::DatabaseError("未找到 fields 表".to_string()))?;
+        let authors_table = dynamic.find_table(ZoteroTableCandidates::CREATORS)
+            .ok_or_else(|| SummaryError::DatabaseError("未找到 itemCreators 表".to_string()))?;
+        let creators_table = dynamic.find_table(ZoteroTableCandidates::CREATOR)
+            .ok_or_else(|| SummaryError::DatabaseError("未找到 creators 表".to_string()))?;
+
+        // 动态构建 SQL
+        let sql = format!(
+            r#"
+            SELECT
+                i.itemID as item_id,
+                fv_title.value as title,
+                fv_date.value as year,
+                (
+                    SELECT GROUP_CONCAT(
+                        COALESCE(c.lastName, '') || COALESCE(c.firstName, ''),
+                        '; '
+                    )
+                    FROM {authors_table} ia
+                    JOIN {creators_table} c ON ia.creatorID = c.creatorID
+                    WHERE ia.itemID = i.itemID
+                    ORDER BY ia.orderIndex
+                ) as authors
+            FROM {items_table} i
+            LEFT JOIN {item_data_table} id_title ON i.itemID = id_title.itemID
+                AND id_title.fieldID = (SELECT fieldID FROM {fields_table} WHERE fieldName = 'title')
+            LEFT JOIN {item_data_values_table} fv_title ON id_title.valueID = fv_title.valueID
+            LEFT JOIN {item_data_table} id_date ON i.itemID = id_date.itemID
+                AND id_date.fieldID = (SELECT fieldID FROM {fields_table} WHERE fieldName = 'date')
+            WHERE i.itemID = ?
+            "#,
+            items_table = items_table,
+            item_data_table = item_data_table,
+            item_data_values_table = item_data_values_table,
+            fields_table = fields_table,
+            authors_table = authors_table,
+            creators_table = creators_table
+        );
 
         let metadata = conn
-            .query_row(sql, params![item_id], |row| {
+            .query_row(&sql, params![item_id], |row| {
                 Ok(ItemMetadata {
                     item_id: row.get(0)?,
                     title: row.get::<_, String>(1).unwrap_or_default(),
@@ -262,17 +291,34 @@ impl SummaryGenerator {
         };
         let conn = guard.as_ref()?;
 
-        // 查询 extra 字段
-        let sql = r#"
-        SELECT fv_extra.value
-        FROM itemData id_extra
-        JOIN itemDataValues fv_extra ON id_extra.valueID = fv_extra.valueID
-        WHERE id_extra.itemID = ?
-        AND id_extra.fieldID = (SELECT fieldID FROM fields WHERE fieldName = 'extra')
-        "#;
+        // 获取动态元数据
+        let metadata = match get_cached_metadata(conn) {
+            Ok(m) => m,
+            Err(_) => return None,
+        };
+        let dynamic = DynamicSqlBuilder::new(&metadata);
+
+        // 动态获取表名
+        let item_data_table = dynamic.find_table(ZoteroTableCandidates::ITEM_DATA)?;
+        let item_data_values_table = dynamic.find_table(ZoteroTableCandidates::ITEM_DATA_VALUES)?;
+        let fields_table = dynamic.find_table(ZoteroTableCandidates::FIELDS)?;
+
+        // 动态构建 SQL
+        let sql = format!(
+            r#"
+            SELECT fv_extra.value
+            FROM {item_data_table} id_extra
+            JOIN {item_data_values_table} fv_extra ON id_extra.valueID = fv_extra.valueID
+            WHERE id_extra.itemID = ?
+            AND id_extra.fieldID = (SELECT fieldID FROM {fields_table} WHERE fieldName = 'extra')
+            "#,
+            item_data_table = item_data_table,
+            item_data_values_table = item_data_values_table,
+            fields_table = fields_table
+        );
 
         let extra_content: Option<String> = conn
-            .query_row(sql, params![item_id], |row| row.get(0))
+            .query_row(&sql, params![item_id], |row| row.get(0))
             .ok();
 
         if let Some(extra) = extra_content {
@@ -296,23 +342,38 @@ impl SummaryGenerator {
         let guard = get_connection().map_err(|e| SummaryError::DatabaseError(e.to_string()))?;
         let conn = guard.as_ref().ok_or_else(|| SummaryError::DatabaseError("数据库连接未初始化".to_string()))?;
 
+        // 获取动态元数据
+        let metadata = get_cached_metadata(conn)
+            .map_err(|e| SummaryError::DatabaseError(format!("获取元数据失败: {}", e)))?;
+        let dynamic = DynamicSqlBuilder::new(&metadata);
+
+        // 动态获取表名
+        let item_data_table = dynamic.find_table(ZoteroTableCandidates::ITEM_DATA)
+            .ok_or_else(|| SummaryError::DatabaseError("未找到 itemData 表".to_string()))?;
+        let item_data_values_table = dynamic.find_table(ZoteroTableCandidates::ITEM_DATA_VALUES)
+            .ok_or_else(|| SummaryError::DatabaseError("未找到 itemDataValues 表".to_string()))?;
+        let fields_table = dynamic.find_table(ZoteroTableCandidates::FIELDS)
+            .ok_or_else(|| SummaryError::DatabaseError("未找到 fields 表".to_string()))?;
+
         // 序列化摘要
         let json = summary.to_json().map_err(|e| SummaryError::SerializeError(e.to_string()))?;
         let cache_entry = format!("{}{}::EndSummary", SUMMARY_CACHE_PREFIX, json);
 
         // 获取 extra 字段的当前值
+        let select_sql = format!(
+            r#"
+            SELECT fv_extra.value
+            FROM {item_data_table} id_extra
+            JOIN {item_data_values_table} fv_extra ON id_extra.valueID = fv_extra.valueID
+            WHERE id_extra.itemID = ?
+            AND id_extra.fieldID = (SELECT fieldID FROM {fields_table} WHERE fieldName = 'extra')
+            "#,
+            item_data_table = item_data_table,
+            item_data_values_table = item_data_values_table,
+            fields_table = fields_table
+        );
         let current_extra: Option<String> = conn
-            .query_row(
-                r#"
-                SELECT fv_extra.value
-                FROM itemData id_extra
-                JOIN itemDataValues fv_extra ON id_extra.valueID = fv_extra.valueID
-                WHERE id_extra.itemID = ?
-                AND id_extra.fieldID = (SELECT fieldID FROM fields WHERE fieldName = 'extra')
-                "#,
-                params![item_id],
-                |row| row.get(0),
-            )
+            .query_row(&select_sql, params![item_id], |row| row.get(0))
             .ok();
 
         // 构建新的 extra 值（保留原有内容，但移除旧的摘要缓存）
@@ -334,30 +395,39 @@ impl SummaryGenerator {
 
         // 更新 extra 字段（由于是只读模式，我们需要使用事务）
         // 注意：这里我们假设 extra 字段已经存在记录
-        let update_sql = r#"
-        UPDATE itemData
-        SET valueID = (
-            SELECT v.valueID
-            FROM itemDataValues v
-            WHERE v.value = ?
-            LIMIT 1
-        )
-        WHERE itemID = ?
-        AND fieldID = (SELECT fieldID FROM fields WHERE fieldName = 'extra')
-        "#;
+        let update_sql = format!(
+            r#"
+            UPDATE {item_data_table}
+            SET valueID = (
+                SELECT v.valueID
+                FROM {item_data_values_table} v
+                WHERE v.value = ?
+                LIMIT 1
+            )
+            WHERE itemID = ?
+            AND fieldID = (SELECT fieldID FROM {fields_table} WHERE fieldName = 'extra')
+            "#,
+            item_data_table = item_data_table,
+            item_data_values_table = item_data_values_table,
+            fields_table = fields_table
+        );
 
         // 如果 extra 字段不存在记录，尝试插入
-        let result = conn.execute(update_sql, params![new_extra, item_id]);
+        let result = conn.execute(&update_sql, params![new_extra, item_id]);
         if result.is_err() {
             // 尝试插入新记录
-            let insert_sql = r#"
-            INSERT INTO itemData (itemID, fieldID, valueID)
-            SELECT ?, fieldID, v.valueID
-            FROM itemDataValues v
-            WHERE v.value = ?
-            LIMIT 1
-            "#;
-            conn.execute(insert_sql, params![item_id, new_extra])
+            let insert_sql = format!(
+                r#"
+                INSERT INTO {item_data_table} (itemID, fieldID, valueID)
+                SELECT ?, fieldID, v.valueID
+                FROM {item_data_values_table} v
+                WHERE v.value = ?
+                LIMIT 1
+                "#,
+                item_data_table = item_data_table,
+                item_data_values_table = item_data_values_table
+            );
+            conn.execute(&insert_sql, params![item_id, new_extra])
                 .map_err(|e| SummaryError::DatabaseError(format!("保存摘要失败: {}", e)))?;
         }
 

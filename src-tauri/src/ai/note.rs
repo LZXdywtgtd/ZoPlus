@@ -12,6 +12,8 @@
 use crate::ai::models::Message;
 use crate::ai::traits::AIProvider;
 use crate::db::connection::get_connection;
+use crate::db::metadata::get_cached_metadata;
+use crate::db::dynamic::{DynamicSqlBuilder, ZoteroTableCandidates};
 use crate::db::items::ItemInfo;
 use crate::pdf::storage::AnnotationStorage;
 use crate::pdf::annotations::{AnnotationType, AnnotationData};
@@ -275,8 +277,24 @@ impl NoteGenerator {
         let guard = get_connection().map_err(|e| NoteError::DatabaseError(e.to_string()))?;
         let conn = guard.as_ref().ok_or_else(|| NoteError::DatabaseError("数据库连接未初始化".to_string()))?;
 
-        // 检测作者表名
-        let author_table = detect_author_table_name(conn);
+        // 获取动态元数据
+        let metadata = get_cached_metadata(conn)
+            .map_err(|e| NoteError::DatabaseError(format!("获取元数据失败: {}", e)))?;
+        let dynamic = DynamicSqlBuilder::new(&metadata);
+
+        // 动态获取表名
+        let items_table = dynamic.find_table(ZoteroTableCandidates::ITEMS)
+            .ok_or_else(|| NoteError::DatabaseError("未找到 items 表".to_string()))?;
+        let item_data_table = dynamic.find_table(ZoteroTableCandidates::ITEM_DATA)
+            .ok_or_else(|| NoteError::DatabaseError("未找到 itemData 表".to_string()))?;
+        let item_data_values_table = dynamic.find_table(ZoteroTableCandidates::ITEM_DATA_VALUES)
+            .ok_or_else(|| NoteError::DatabaseError("未找到 itemDataValues 表".to_string()))?;
+        let fields_table = dynamic.find_table(ZoteroTableCandidates::FIELDS)
+            .ok_or_else(|| NoteError::DatabaseError("未找到 fields 表".to_string()))?;
+        let authors_table = dynamic.find_table(ZoteroTableCandidates::CREATORS)
+            .ok_or_else(|| NoteError::DatabaseError("未找到 itemCreators 表".to_string()))?;
+        let creators_table = dynamic.find_table(ZoteroTableCandidates::CREATOR)
+            .ok_or_else(|| NoteError::DatabaseError("未找到 creators 表".to_string()))?;
 
         let sql = format!(
             r#"
@@ -289,20 +307,25 @@ impl NoteGenerator {
                         COALESCE(c.lastName, '') || COALESCE(c.firstName, ''),
                         '; '
                     )
-                    FROM {} ia
-                    JOIN creators c ON ia.creatorID = c.creatorID
+                    FROM {authors_table} ia
+                    JOIN {creators_table} c ON ia.creatorID = c.creatorID
                     WHERE ia.itemID = i.itemID
                     ORDER BY ia.orderIndex
                 ) as authors
-            FROM items i
-            LEFT JOIN itemData id_title ON i.itemID = id_title.itemID
-                AND id_title.fieldID = (SELECT fieldID FROM fields WHERE fieldName = 'title')
-            LEFT JOIN itemDataValues fv_title ON id_title.valueID = fv_title.valueID
-            LEFT JOIN itemData id_date ON i.itemID = id_date.itemID
-                AND id_date.fieldID = (SELECT fieldID FROM fields WHERE fieldName = 'date')
+            FROM {items_table} i
+            LEFT JOIN {item_data_table} id_title ON i.itemID = id_title.itemID
+                AND id_title.fieldID = (SELECT fieldID FROM {fields_table} WHERE fieldName = 'title')
+            LEFT JOIN {item_data_values_table} fv_title ON id_title.valueID = fv_title.valueID
+            LEFT JOIN {item_data_table} id_date ON i.itemID = id_date.itemID
+                AND id_date.fieldID = (SELECT fieldID FROM {fields_table} WHERE fieldName = 'date')
             WHERE i.itemID = ?
             "#,
-            author_table
+            items_table = items_table,
+            item_data_table = item_data_table,
+            item_data_values_table = item_data_values_table,
+            fields_table = fields_table,
+            authors_table = authors_table,
+            creators_table = creators_table
         );
 
         conn.query_row(&sql, params![item_id], |row| {
@@ -523,24 +546,6 @@ impl NoteGenerator {
 
         Ok((title, content))
     }
-}
-
-/// 检测作者关联表名
-fn detect_author_table_name(conn: &rusqlite::Connection) -> String {
-    let candidates = ["itemCreators", "itemAuthors", "itemCreator"];
-    for table in candidates {
-        let exists = conn
-            .query_row(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                [table],
-                |_| Ok(true),
-            )
-            .unwrap_or(false);
-        if exists {
-            return table.to_string();
-        }
-    }
-    "itemCreators".to_string()
 }
 
 /// 笔记错误类型

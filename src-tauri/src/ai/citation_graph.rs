@@ -10,6 +10,8 @@
 //! - 邻接表：高效存储稀疏的引用关系
 //! - 迭代计算：标准的 PageRank 迭代直到收敛
 
+use crate::db::metadata::get_cached_metadata;
+use crate::db::dynamic::{DynamicSqlBuilder, ZoteroTableCandidates};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -189,7 +191,24 @@ pub fn build_citation_graph(db_path: &str, min_citations: i32) -> Result<Citatio
 
 /// 获取所有文献基本信息
 fn get_all_items_info(conn: &rusqlite::Connection) -> Result<Vec<ItemBasicInfo>, String> {
-    let author_table = detect_author_table_name(conn);
+    // 获取动态元数据
+    let metadata = get_cached_metadata(conn)
+        .map_err(|e| format!("获取元数据失败: {}", e))?;
+    let dynamic = DynamicSqlBuilder::new(&metadata);
+
+    // 动态获取表名
+    let items_table = dynamic.find_table(ZoteroTableCandidates::ITEMS)
+        .ok_or_else(|| "未找到 items 表".to_string())?;
+    let item_data_table = dynamic.find_table(ZoteroTableCandidates::ITEM_DATA)
+        .ok_or_else(|| "未找到 itemData 表".to_string())?;
+    let item_data_values_table = dynamic.find_table(ZoteroTableCandidates::ITEM_DATA_VALUES)
+        .ok_or_else(|| "未找到 itemDataValues 表".to_string())?;
+    let fields_table = dynamic.find_table(ZoteroTableCandidates::FIELDS)
+        .ok_or_else(|| "未找到 fields 表".to_string())?;
+    let authors_table = dynamic.find_table(ZoteroTableCandidates::CREATORS)
+        .ok_or_else(|| "未找到 itemCreators 表".to_string())?;
+    let creators_table = dynamic.find_table(ZoteroTableCandidates::CREATOR)
+        .ok_or_else(|| "未找到 creators 表".to_string())?;
 
     let sql = format!(
         r#"
@@ -202,20 +221,25 @@ fn get_all_items_info(conn: &rusqlite::Connection) -> Result<Vec<ItemBasicInfo>,
                     COALESCE(c.lastName, '') || COALESCE(c.firstName, ''),
                     '; '
                 )
-                FROM {} ia
-                JOIN creators c ON ia.creatorID = c.creatorID
+                FROM {authors_table} ia
+                JOIN {creators_table} c ON ia.creatorID = c.creatorID
                 WHERE ia.itemID = i.itemID
                 ORDER BY ia.orderIndex
             ) as authors
-        FROM items i
-        LEFT JOIN itemData id_title ON i.itemID = id_title.itemID
-            AND id_title.fieldID = (SELECT fieldID FROM fields WHERE fieldName = 'title')
-        LEFT JOIN itemDataValues fv_title ON id_title.valueID = fv_title.valueID
-        LEFT JOIN itemData id_date ON i.itemID = id_date.itemID
-            AND id_date.fieldID = (SELECT fieldID FROM fields WHERE fieldName = 'date')
-        LEFT JOIN itemDataValues fv_date ON id_date.valueID = fv_date.valueID
+        FROM {items_table} i
+        LEFT JOIN {item_data_table} id_title ON i.itemID = id_title.itemID
+            AND id_title.fieldID = (SELECT fieldID FROM {fields_table} WHERE fieldName = 'title')
+        LEFT JOIN {item_data_values_table} fv_title ON id_title.valueID = fv_title.valueID
+        LEFT JOIN {item_data_table} id_date ON i.itemID = id_date.itemID
+            AND id_date.fieldID = (SELECT fieldID FROM {fields_table} WHERE fieldName = 'date')
+        LEFT JOIN {item_data_values_table} fv_date ON id_date.valueID = fv_date.valueID
         "#,
-        author_table
+        items_table = items_table,
+        item_data_table = item_data_table,
+        item_data_values_table = item_data_values_table,
+        fields_table = fields_table,
+        authors_table = authors_table,
+        creators_table = creators_table
     );
 
     let mut stmt = conn.prepare(&sql).map_err(|e| format!("准备查询失败: {}", e))?;
@@ -245,24 +269,6 @@ struct ItemBasicInfo {
     authors: String,
 }
 
-/// 检测作者关联表名
-fn detect_author_table_name(conn: &rusqlite::Connection) -> String {
-    let candidates = ["itemCreators", "itemAuthors", "itemCreator"];
-    for table in candidates {
-        let exists = conn
-            .query_row(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                [table],
-                |_| Ok(true),
-            )
-            .unwrap_or(false);
-        if exists {
-            return table.to_string();
-        }
-    }
-    "itemCreators".to_string()
-}
-
 /// 提取引用关系
 ///
 /// Zotero 的 itemRelations 表存储了文献关系，包括引用关系：
@@ -272,14 +278,12 @@ fn extract_citation_relations(
     conn: &rusqlite::Connection,
     items: &[ItemBasicInfo],
 ) -> Result<(Vec<CitationEdge>, HashMap<i32, i32>), String> {
+    // 获取动态元数据
+    let metadata = get_cached_metadata(conn)
+        .map_err(|e| format!("获取元数据失败: {}", e))?;
+
     // 检查 itemRelations 表是否存在
-    let table_exists = conn
-        .query_row(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='itemRelations'",
-            [],
-            |_| Ok(true),
-        )
-        .unwrap_or(false);
+    let table_exists = metadata.table_exists("itemRelations");
 
     let mut edges = Vec::new();
     let mut citation_counts: HashMap<i32, i32> = HashMap::new();

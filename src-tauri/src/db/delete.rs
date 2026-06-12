@@ -17,6 +17,7 @@
 //! - 删除操作需要写权限，与只读查询连接分离
 //! - 使用事务确保数据一致性
 //! - 删除前验证 item 是否存在
+//! - **完全动态表名检测**：使用 DatabaseMetadata 动态检测实际表名，不硬编码
 
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
@@ -25,6 +26,8 @@ use std::path::PathBuf;
 use tokio::time::{timeout, Duration};
 
 use super::path::get_zotero_database_path;
+use super::metadata::get_cached_metadata;
+use super::dynamic::{DynamicSqlBuilder, ZoteroTableCandidates, find_items_key_column};
 
 /// 删除结果结构体
 #[derive(Debug, Serialize, Deserialize)]
@@ -128,15 +131,24 @@ fn delete_storage_for_item(storage_path: &PathBuf, item_key: &str) -> Result<boo
     Ok(deleted)
 }
 
-/// 验证 item 是否存在
+/// 验证 item 是否存在（使用动态表名检测）
 fn verify_item_exists(conn: &Connection, item_id: i32) -> Result<String, DeleteError> {
+    let metadata = get_cached_metadata(conn)
+        .map_err(|e| DeleteError::DbOperationFailed(format!("元数据扫描失败: {}", e)))?;
+    let dynamic = DynamicSqlBuilder::new(&metadata);
+
+    // 动态获取 items 表名
+    let items_table = dynamic.find_table(ZoteroTableCandidates::ITEMS)
+        .ok_or_else(|| DeleteError::DbOperationFailed("未找到 items 表".to_string()))?;
+
+    // 动态检测 key 列名（Zotero 可能使用 key、itemKey、keyString 等）
+    let key_column = find_items_key_column(&metadata)
+        .ok_or_else(|| DeleteError::DbOperationFailed("未找到 items 表的 key 列".to_string()))?;
+
     // 获取 itemKey 用于后续删除 storage
+    let sql = format!("SELECT {} FROM {} WHERE itemID = ?", key_column, items_table);
     let item_key: Option<String> = conn
-        .query_row(
-            "SELECT itemKey FROM items WHERE itemID = ?",
-            [item_id],
-            |row| row.get(0),
-        )
+        .query_row(&sql, [item_id], |row| row.get(0))
         .ok();
 
     match item_key {
@@ -145,7 +157,7 @@ fn verify_item_exists(conn: &Connection, item_id: i32) -> Result<String, DeleteE
     }
 }
 
-/// 在事务中执行单条文献删除
+/// 在事务中执行单条文献删除（使用动态表名检测）
 fn delete_item_internal(item_id: i32) -> Result<bool, DeleteError> {
     // 获取数据库路径
     let db_path = get_zotero_database_path().ok_or_else(|| {
@@ -157,6 +169,11 @@ fn delete_item_internal(item_id: i32) -> Result<bool, DeleteError> {
         DeleteError::DbConnectionFailed(format!("打开数据库失败: {}", e))
     })?;
 
+    // 获取元数据（用于动态表名检测）
+    let metadata = get_cached_metadata(&conn)
+        .map_err(|e| DeleteError::DbOperationFailed(format!("元数据扫描失败: {}", e)))?;
+    let dynamic = DynamicSqlBuilder::new(&metadata);
+
     // 验证 item 是否存在，获取 itemKey
     let item_key = verify_item_exists(&conn, item_id)?;
 
@@ -165,35 +182,58 @@ fn delete_item_internal(item_id: i32) -> Result<bool, DeleteError> {
         DeleteError::TransactionFailed(format!("开始事务失败: {}", e))
     })?;
 
-    // 1. 删除 itemData 记录
-    tx.execute("DELETE FROM itemData WHERE itemID = ?", [item_id])
-        .map_err(|e| {
-            DeleteError::DbOperationFailed(format!("删除 itemData 失败: {}", e))
-        })?;
-    eprintln!("[删除] 已删除 itemData: item_id={}", item_id);
+    // 动态获取所有相关表名
+    let item_data_table = dynamic.find_table(ZoteroTableCandidates::ITEM_DATA);
+    let creators_table = dynamic.find_table(ZoteroTableCandidates::CREATORS);
+    let tags_table = dynamic.find_table(ZoteroTableCandidates::ITEM_TAGS);
+    let attachments_table = dynamic.find_table(ZoteroTableCandidates::ITEM_ATTACHMENTS);
+    let items_table = dynamic.find_table(ZoteroTableCandidates::ITEMS)
+        .ok_or_else(|| DeleteError::DbOperationFailed("未找到 items 表".to_string()))?;
 
-    // 2. 删除 itemCreators 记录
-    tx.execute("DELETE FROM itemCreators WHERE itemID = ?", [item_id])
-        .map_err(|e| {
-            DeleteError::DbOperationFailed(format!("删除 itemCreators 失败: {}", e))
-        })?;
-    eprintln!("[删除] 已删除 itemCreators: item_id={}", item_id);
+    // 1. 删除 itemData 记录（如果表存在）
+    if let Some(table) = item_data_table {
+        if dynamic.table_exists(table) {
+            let sql = format!("DELETE FROM {} WHERE itemID = ?", table);
+            tx.execute(&sql, [item_id])
+                .map_err(|e| DeleteError::DbOperationFailed(format!("删除 {} 失败: {}", table, e)))?;
+            eprintln!("[删除] 已删除 {}: item_id={}", table, item_id);
+        }
+    }
 
-    // 3. 删除 itemTags 记录
-    tx.execute("DELETE FROM itemTags WHERE itemID = ?", [item_id])
-        .map_err(|e| {
-            DeleteError::DbOperationFailed(format!("删除 itemTags 失败: {}", e))
-        })?;
-    eprintln!("[删除] 已删除 itemTags: item_id={}", item_id);
+    // 2. 删除 itemCreators 记录（如果表存在）
+    if let Some(table) = creators_table {
+        if dynamic.table_exists(table) {
+            let sql = format!("DELETE FROM {} WHERE itemID = ?", table);
+            tx.execute(&sql, [item_id])
+                .map_err(|e| DeleteError::DbOperationFailed(format!("删除 {} 失败: {}", table, e)))?;
+            eprintln!("[删除] 已删除 {}: item_id={}", table, item_id);
+        }
+    }
 
-    // 4. 删除 itemAttachments 记录（如果有）
-    tx.execute("DELETE FROM itemAttachments WHERE itemID = ?", [item_id])
-        .ok(); // 忽略错误，可能表不存在
-    eprintln!("[删除] 已删除 itemAttachments: item_id={}", item_id);
+    // 3. 删除 itemTags 记录（如果表存在）
+    if let Some(table) = tags_table {
+        if dynamic.table_exists(table) {
+            let sql = format!("DELETE FROM {} WHERE itemID = ?", table);
+            tx.execute(&sql, [item_id])
+                .map_err(|e| DeleteError::DbOperationFailed(format!("删除 {} 失败: {}", table, e)))?;
+            eprintln!("[删除] 已删除 {}: item_id={}", table, item_id);
+        }
+    }
+
+    // 4. 删除 itemAttachments 记录（如果表存在）
+    if let Some(table) = attachments_table {
+        if dynamic.table_exists(table) {
+            let sql = format!("DELETE FROM {} WHERE itemID = ?", table);
+            tx.execute(&sql, [item_id])
+                .ok(); // 忽略错误，可能没有附件
+            eprintln!("[删除] 已删除 {}: item_id={}", table, item_id);
+        }
+    }
 
     // 5. 删除 items 表记录
+    let sql = format!("DELETE FROM {} WHERE itemID = ?", items_table);
     let rows_affected = tx
-        .execute("DELETE FROM items WHERE itemID = ?", [item_id])
+        .execute(&sql, [item_id])
         .map_err(|e| {
             DeleteError::DbOperationFailed(format!("删除 items 记录失败: {}", e))
         })?;

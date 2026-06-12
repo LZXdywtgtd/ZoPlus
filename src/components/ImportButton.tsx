@@ -8,6 +8,7 @@ import { ImportOutlined, CloudUploadOutlined } from '@ant-design/icons';
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import DropZone from './DropZone';
+import { logError, logInfo } from '../utils/tauriCommands';
 
 /// 导入按钮组件属性
 interface ImportButtonProps {
@@ -37,26 +38,35 @@ function ImportButton({ onImportSuccess }: ImportButtonProps) {
   /** 选择文件导入 */
   const handleSelectFiles = async () => {
     try {
+      logInfo('开始选择文件');
+
       const paths = await open({
         multiple: true,
         filters: [{
-          name: '文档文件',
-          extensions: ['pdf', 'docx', 'pptx', 'epub', 'txt']
+          name: 'PDF文档',
+          extensions: ['pdf']
         }]
       });
 
-      if (paths && Array.isArray(paths)) {
-        for (const path of paths) {
-          try {
-            await invoke('import_file', { filePath: path });
-            message.success('导入成功');
-          } catch (err) {
-            message.error('导入失败: ' + err);
-          }
-        }
-        onImportSuccess?.();
+      if (!paths || (Array.isArray(paths) && paths.length === 0)) {
+        logInfo('用户取消了文件选择');
+        return;
       }
+
+      const fileArray = Array.isArray(paths) ? paths : [paths];
+      for (const path of fileArray) {
+        try {
+          await invoke('import_file', { filePath: path });
+          logInfo(`导入成功: ${path}`);
+          message.success('导入成功');
+        } catch (err) {
+          logError(`导入失败: ${path}`, err);
+          message.error('导入失败: ' + err);
+        }
+      }
+      onImportSuccess?.();
     } catch (err) {
+      logError('选择文件失败', err);
       console.error('[ImportButton] 选择文件失败:', err);
       message.error('选择文件失败');
     }
@@ -65,17 +75,23 @@ function ImportButton({ onImportSuccess }: ImportButtonProps) {
   /** 选择文件夹导入 */
   const handleSelectFolder = async () => {
     try {
+      logInfo('开始选择文件夹');
+
       const path = await open({ directory: true });
       if (path && typeof path === 'string') {
         try {
+          logInfo(`开始导入文件夹: ${path}`);
           await invoke('import_folder', { folderPath: path });
+          logInfo(`文件夹导入完成: ${path}`);
           message.success('文件夹导入完成');
           onImportSuccess?.();
         } catch (err) {
+          logError(`文件夹导入失败: ${path}`, err);
           message.error('导入失败: ' + err);
         }
       }
     } catch (err) {
+      logError('选择文件夹失败', err);
       console.error('[ImportButton] 选择文件夹失败:', err);
       message.error('选择文件夹失败');
     }
